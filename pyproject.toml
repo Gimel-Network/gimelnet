@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "gimelnet"
+version = "0.1.0"
+description = ""
+authors = ["Konstantin Templin <1qnbhd@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+rich = "^10.16.1"
+sanic = "^21.9.3"
+jsonrpcserver = "^5.0.5"
+jsonrpcclient = "^4.0.2"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+
+[tool.poetry.scripts]
+rpcserver="gimelnet.endpointrpc.server:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
