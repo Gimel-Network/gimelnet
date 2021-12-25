@@ -36,12 +36,13 @@ class TestStorage(Storage):
 
 class JsonFileStorage(Storage):
 
-    def __init__(self, filename=".storage.txt"):
+    def __init__(self, filename="_storage.txt"):
         super().__init__()
 
         self.filename = filename
 
         if os.path.isfile(self.filename):
+            print('is exist')
             return
 
         with open(self.filename, 'w') as js_storage:
