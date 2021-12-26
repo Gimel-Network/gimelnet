@@ -80,10 +80,9 @@ class Scheduler:
                         self._writeable[sock] = task
 
                 except Exception as e:
-                    e_type = type(e)
-                    console.print_exception(show_locals=True)
-                    callback = self._exceptors.get(e_type, lambda *_, **__: None)
-                    callback(e)
+                    if callback := self._exceptors.get(type(e), lambda *_, **__: None):
+                        callback(e)
+                    else:
+                        console.print_exception(show_locals=True)
         finally:
-            print('finally')
             self._finalizer()

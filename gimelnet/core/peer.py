@@ -11,7 +11,7 @@ import requests
 
 from gimelnet.core.scheduler import Scheduler
 from gimelnet.misc.shared import SharedFactory
-from gimelnet.misc.utils import Addr, get_ip, PeerProxy, send, jrpc, peer2key, key2peer, recv_timeout
+from gimelnet.misc.utils import Addr, get_ip, send, jrpc, peer2key, key2peer, recv_timeout
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +22,29 @@ DEFAULT_BIND_PORT = 6666
 class p2p(NamedTuple):
     host: str
     port: int
+
+
+class PeerProxy:
+
+    def __init__(self, a2a, a2s):
+        self.a2a = a2a
+        self.a2s = a2s
+
+    def get_socket(self, host, port):
+        address = self.get_address(host, port)
+        return self.a2s[address]
+
+    def get_address(self, host, port):
+        serialized = peer2key(host, port)
+        return self.a2a[serialized]
+
+    def add_socket(self, host, port, socket_):
+        serialized = peer2key(host, port)
+        self.a2s[serialized] = socket_
+
+    def add_serialized(self, host, port, address):
+        serialized = peer2key(host, port)
+        self.a2a[serialized] = address
 
 
 def interrogate_endpoint(endpoint_url):
@@ -62,16 +85,16 @@ class Peer:
         self.scheduler.add_exceptor(StopIteration, lambda e: print('Stop Iteration'))
         self.scheduler.add_exceptor(ConnectionResetError,
                                     lambda e: print('Connection reset error'))
-        self.scheduler.add_exceptor(BaseException,
-                                    lambda e: print(e))
 
         self.shared_factory = SharedFactory()
 
         payload = ['1', '2']
         self.shared_factory.push('payload', payload)
+        self.shared_factory.push('connected_peers', self.a2a)
 
         self.scheduler.spawn_periodic(self.check_connected, 3)
         self.scheduler.spawn_periodic(self.shared_factory.share, 5)
+
         # Is this node a super node?
         # Super node - one that currently
         # acts as a coordinator in the current p2p network
@@ -80,6 +103,7 @@ class Peer:
         try:
             self.socket.bind(self.netaddr)
             self.socket.listen()
+            
             log.info('Connect as server node.')
 
             # here the logic is as follows: we will ask our rpc about
@@ -87,7 +111,7 @@ class Peer:
             # we will try to make bind for this address, if it does not
             # work, then we will try to connect to it. We assume that
             # RPC always gives us reliable information.
-            
+
             request_params = [get_ip(), DEFAULT_BIND_PORT]
             response = requests.post(endpoint, json=request("endpoint.set", request_params))
             log.debug(response.json())
@@ -132,9 +156,8 @@ class Peer:
 
     # noinspection DuplicatedCode
     def on_super_node_destroy(self, host, port):
-        """What should happen when the super-node leaves the current network.
+        """What should happen when the super-node leaves the current network."""
 
-        """
         self.scheduler.clear()
 
         self.socket.close()
@@ -169,23 +192,15 @@ class Peer:
             self.scheduler.spawn(job)
 
     def on_peer_connect(self, method, host, port, xorname):
+        """Add new peer to a2a-dict object and share with
+        other peers in current network via shared_factory.
+        """
+
         self.peer_proxy.add_serialized(host, port, xorname)
-
-        params = [
-            {
-                'host': key2peer(serialized)[0],
-                'port': key2peer(serialized)[1],
-                'serialized': self.a2a[serialized]
-            }
-            for serialized, name in self.a2a.items()
-        ]
-
-        di = jrpc('notify.peers', *params)
-
-        for s in self.a2s.values():
-            send(s, json.dumps(di))
+        self.shared_factory.share_one('connected_peers')
 
     def on_peer_disconnect(self, method, host, port):
+        # Actual only for super-node
         serialized = peer2key(host, port)
         del self.a2a[serialized]
         del self.a2s[serialized]
@@ -196,24 +211,40 @@ class Peer:
             send(sock, json.dumps(di))
 
     def serve_node(self, client_socket):
+        """A separate job for servicing a separate network node.
+        Is a generator and triggers new messages from this node
+
+        :param client_socket: client socket for servicing
+        :return: None
+
+        """
+
         while True:
+            # return the control flow to the main loop
             yield Scheduler.READ, client_socket
-            request = client_socket.recv(4096)
+
+            # followed by a blocking call-reading of data by timeout
+            response = recv_timeout(client_socket)
 
             log.info(f'Receive message from {client_socket}: ')
 
+            # socket connection broken sign
+            if not response:
+                client_socket.close()
+                return
+
+            # we assume that there may be errors in the transfer
+            # of data,but we will simply skip this message if we
+            # cannot do anything based on it
             with suppress(json.JSONDecodeError):
-                js = json.loads(request)
+                js = json.loads(response)
                 log.info(json.dumps(js, indent=4))
 
+                # TODO (qnbhd) make registration callbacks mechanism
                 if js['method'] == 'peer.connect':
                     self.on_peer_connect(js['method'], **js['params'])
                 elif js['method'] == 'peer.disconnect':
                     self.on_peer_disconnect(js['method'], **js['params'])
-
-            if not request:
-                client_socket.close()
-                return
 
             yield Scheduler.WRITE, client_socket
 
@@ -282,10 +313,12 @@ class Peer:
             js = json.loads(message)
             log.debug(json.dumps(js, indent=4))
 
-            if js['method'] == 'notify.peers':
+            if js['method'] == 'shared.share':
                 params = js['params']
-                for u in params:
-                    self.peer_proxy.add_serialized(u['host'], u['port'], u['serialized'])
+                self.shared_factory.loads(params)
+                #
+                # for u in params:
+                #     self.peer_proxy.add_serialized(u['host'], u['port'], u['serialized'])
 
             # TODO (qnbhd) what about message send method?
             # recipient = random.choice(list(self.a2a.values()))
