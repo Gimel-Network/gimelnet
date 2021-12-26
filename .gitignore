@@ -100,4 +100,4 @@ modules.xml
 
 
 /gimelnet/.storage.txt
-/gimelnet/endpointrpc/.storage.txt
+/gimelnet/rpc/.storage.txt

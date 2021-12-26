@@ -9,12 +9,14 @@ from typing import NamedTuple, Generator
 from jsonrpcclient import parse, request
 import requests
 
-from gimelnet.p2pcore.scheduler import Scheduler
-
+from gimelnet.core.scheduler import Scheduler
+from gimelnet.misc.shared import SharedFactory
+from gimelnet.misc.utils import Addr, get_ip, PeerProxy, send, jrpc, peer2key, key2peer, recv_timeout
 
 log = logging.getLogger(__name__)
 
 CHUNK_SIZE = 4096
+DEFAULT_BIND_PORT = 6666
 
 
 class p2p(NamedTuple):
@@ -22,127 +24,29 @@ class p2p(NamedTuple):
     port: int
 
 
-def peer2key(host, port):
-    """Get dict-like key for current host+port
+def interrogate_endpoint(endpoint_url):
+    js = request("endpoint.get")
 
-    :type host: str
-    :type port: str|int
+    response = requests.post(endpoint_url, json=js)
 
-    :rtype: str
-    """
-    port = int(port)
-    return f"{host}+{port}"
+    if response:
+        json_response = response.json()
+        if 'error' not in json_response:
+            print(json_response)
+            hp = json_response['result'].split(':')
+            addr = Addr.from_pair(*hp)
+            return addr
 
-
-def key2peer(serialized):
-    """Extract host+port from key
-
-    :type serialized: str
-    :return: str,int
-
-    """
-    host, port = serialized.split('+')
-    port = int(port)
-    return host, port
-
-
-class PeerProxy:
-
-    def __init__(self, a2a, a2s):
-        self.a2a = a2a
-        self.a2s = a2s
-
-    def get_socket(self, host, port):
-        address = self.get_address(host, port)
-        return self.a2s[address]
-
-    def get_address(self, host, port):
-        serialized = peer2key(host, port)
-        return self.a2a[serialized]
-
-    def add_socket(self, host, port, socket_):
-        serialized = peer2key(host, port)
-        self.a2s[serialized] = socket_
-
-    def add_serialized(self, host, port, address):
-        serialized = peer2key(host, port)
-        self.a2a[serialized] = address
-
-
-def jrpc(method, *pos_params, **kw_params):
-    assert bool(pos_params) ^ bool(kw_params), 'parameters can be positional or named'
-
-    params = pos_params or kw_params
-
-    di = {
-        "jsonrpc": 2.0,
-        "method": method,
-        "params": params
-    }
-
-    return di
-
-
-def send(the_socket: socket.socket, message: str):
-    enc = message.encode('utf-8')
-    the_socket.sendall(enc)
-
-
-def recv_timeout(the_socket, timeout=0.01):
-    the_socket.setblocking(0)
-    total_data = []
-
-    begin = time.time()
-    while True:
-        if total_data and time.time() - begin > timeout:
-            break
-        elif time.time() - begin > timeout * 2:
-            break
-
-        # noinspection PyBroadException
-        try:
-            data = the_socket.recv(CHUNK_SIZE)
-            if data:
-                total_data.append(data)
-                begin = time.time()
-            else:
-                time.sleep(0.1)
-        except BaseException:
-            pass
-
-    return ''.join([u.decode('utf-8') for u in total_data])
-
-
-def get_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    ggl = ('8.8.8.8', 80)
-    s.connect(ggl)
-    ip, _ = s.getsockname()
-    s.close()
-    return ip
-
-
-class Addr(NamedTuple):
-    host: str
-    port: int
-
-    @classmethod
-    def from_pair(cls, host, port):
-        return cls(host, port)
-
-    def to_pair(self):
-        return self.host, self.port
+    return Addr.from_pair(get_ip(), DEFAULT_BIND_PORT)
 
 
 class Peer:
 
-    def __init__(self, xorname, network: Addr, endpoint: str):
+    def __init__(self, xorname, endpoint: str):
         # unique node address in p2p network
 
         self.xorname = xorname
-        self.host, self.port = network
-
-        self.addr = network
+        self.netaddr = interrogate_endpoint(endpoint)
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -161,25 +65,37 @@ class Peer:
         self.scheduler.add_exceptor(BaseException,
                                     lambda e: print(e))
 
+        self.shared_factory = SharedFactory()
+
+        payload = ['1', '2']
+        self.shared_factory.push('payload', payload)
+
         self.scheduler.spawn_periodic(self.check_connected, 3)
+        self.scheduler.spawn_periodic(self.shared_factory.share, 5)
         # Is this node a super node?
         # Super node - one that currently
         # acts as a coordinator in the current p2p network
         self.is_super = True
 
         try:
-            self.socket.bind(self.addr)
+            self.socket.bind(self.netaddr)
             self.socket.listen()
             log.info('Connect as server node.')
 
-            request_params = [get_ip(), 6666]
+            # here the logic is as follows: we will ask our rpc about
+            # which host (super-node) is relevant at the moment, then
+            # we will try to make bind for this address, if it does not
+            # work, then we will try to connect to it. We assume that
+            # RPC always gives us reliable information.
+            
+            request_params = [get_ip(), DEFAULT_BIND_PORT]
             response = requests.post(endpoint, json=request("endpoint.set", request_params))
             log.debug(response.json())
 
             acceptor = self.accept_connections()
             self.scheduler.spawn(acceptor)
         except OSError:
-            self.socket.connect(self.addr)
+            self.socket.connect(self.netaddr)
             self.is_super = False
             sh, sp = self.socket.getsockname()
 
@@ -197,12 +113,12 @@ class Peer:
             log.info('Connect as peer node.')
 
             # noinspection PyProtectedMember
-            self.scheduler._add_readable(self.socket, self.addr.to_pair())
+            self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
 
-        self_serialized = peer2key(*self.addr)
+        self_serialized = peer2key(*self.netaddr)
         self.a2a[self_serialized] = self.xorname
 
-        log.debug(f'raddr: {self.socket.getsockname()}')
+        log.debug(f'Current node addr: {self.socket.getsockname()}')
 
     def finalizer(self):
         if self.is_super:
@@ -247,6 +163,7 @@ class Peer:
 
             log.info(f'Connection from {address}')
             self.peer_proxy.add_socket(address[0], address[1], client_socket)
+            self.shared_factory.add_recipient(client_socket)
 
             job = self.serve_node(client_socket)
             self.scheduler.spawn(job)
@@ -316,7 +233,7 @@ class Peer:
                 self.scheduler._readable.clear()
 
                 with suppress(KeyError):
-                    key = peer2key(*self.addr)
+                    key = peer2key(*self.netaddr)
                     del self.a2a[key]
 
                 lg_host, lg_port = self.lifeguard()
@@ -334,7 +251,7 @@ class Peer:
                 else:
                     i = 0
                     while i < 5 or server_socket.recv(4096):
-                        log.warning(f'Trying connection to {self.addr}')
+                        log.warning(f'Trying connection to {self.netaddr}')
                         print(self.a2a)
 
                         params = [

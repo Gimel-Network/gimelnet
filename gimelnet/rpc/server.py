@@ -6,7 +6,7 @@ from jsonrpcserver import Success, Error, dispatch_to_serializable, method
 from jsonrpcserver.result import SuccessResult, ErrorResult
 
 # jsonrpcserver patch for linter
-from gimelnet.endpointrpc.storage import JsonFileStorage
+from gimelnet.rpc.storage import JsonFileStorage
 
 Result = Either[ErrorResult, SuccessResult]
 

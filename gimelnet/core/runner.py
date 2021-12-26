@@ -14,9 +14,8 @@ def gen_hash_from_words(words):
 
 
 if __name__ == '__main__':
-    network = Addr('0.0.0.0', 6666)
-    endpoint = "http://127.0.0.1:5000"
+    endpoint = "http://65.21.240.183:5000"
 
     uuid = gen_hash_from_words(['test', 'gimel', 'net'])
-    peer = Peer(uuid, network, endpoint)
+    peer = Peer(uuid, endpoint)
     peer.run()
