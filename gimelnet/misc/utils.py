@@ -1,9 +1,13 @@
+import logging
 import socket
 import time
+import zlib
+from contextlib import suppress
 from typing import NamedTuple
 
 CHUNK_SIZE = 4096
 DEFAULT_BIND_PORT = 6666
+
 
 def peer2key(host, port):
     """Get dict-like key for current host+port
@@ -29,29 +33,6 @@ def key2peer(serialized):
     return host, port
 
 
-class PeerProxy:
-
-    def __init__(self, a2a, a2s):
-        self.a2a = a2a
-        self.a2s = a2s
-
-    def get_socket(self, host, port):
-        address = self.get_address(host, port)
-        return self.a2s[address]
-
-    def get_address(self, host, port):
-        serialized = peer2key(host, port)
-        return self.a2a[serialized]
-
-    def add_socket(self, host, port, socket_):
-        serialized = peer2key(host, port)
-        self.a2s[serialized] = socket_
-
-    def add_serialized(self, host, port, address):
-        serialized = peer2key(host, port)
-        self.a2a[serialized] = address
-
-
 def jrpc(method, *pos_params, **kw_params):
     assert bool(pos_params) ^ bool(kw_params), 'parameters can be positional or named'
 
@@ -68,12 +49,13 @@ def jrpc(method, *pos_params, **kw_params):
 
 def send(the_socket: socket.socket, message: str):
     enc = message.encode('utf-8')
-    the_socket.sendall(enc)
+    compressed = zlib.compress(enc)
+    the_socket.sendall(compressed)
 
 
 def recv_timeout(the_socket, timeout=0.01):
     the_socket.setblocking(0)
-    total_data = []
+    total_data = bytearray()
 
     begin = time.time()
     while True:
@@ -86,14 +68,19 @@ def recv_timeout(the_socket, timeout=0.01):
         try:
             data = the_socket.recv(CHUNK_SIZE)
             if data:
-                total_data.append(data)
+                total_data += data
                 begin = time.time()
             else:
                 time.sleep(0.1)
         except BaseException:
             pass
 
-    return ''.join([u.decode('utf-8') for u in total_data])
+    with suppress(zlib.error):
+        total_data = zlib.decompress(total_data)
+
+    decoded = total_data.decode('utf-8')
+
+    return decoded
 
 
 def get_ip():

@@ -9,8 +9,11 @@ console = Console()
 
 
 class Scheduler:
+
     READ = 0
     WRITE = 1
+    DELETE_JOB = 2
+
     SELECT_TIMEOUT = 1
 
     def __init__(self):

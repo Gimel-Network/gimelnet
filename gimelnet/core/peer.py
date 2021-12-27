@@ -65,16 +65,16 @@ def interrogate_endpoint(endpoint_url):
 
 class Peer:
 
-    def __init__(self, xorname, endpoint: str):
+    def __init__(self, gimel_addr, endpoint: str):
         # unique node address in p2p network
 
-        self.xorname = xorname
+        self.gimel_addr = gimel_addr
         self.netaddr = interrogate_endpoint(endpoint)
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        # host+port to xorname
+        # host+port to gimel_addr
         self.a2a = dict()
         # host+port to socket
         self.a2s = dict()
@@ -103,7 +103,7 @@ class Peer:
         try:
             self.socket.bind(self.netaddr)
             self.socket.listen()
-            
+
             log.info('Connect as server node.')
 
             # here the logic is as follows: we will ask our rpc about
@@ -125,7 +125,7 @@ class Peer:
 
             di = jrpc('peer.connect',
                       host=sh, port=sp,
-                      xorname=self.xorname)
+                      gimel_addr=self.gimel_addr)
 
             dumped = json.dumps(di)
 
@@ -140,7 +140,7 @@ class Peer:
             self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
 
         self_serialized = peer2key(*self.netaddr)
-        self.a2a[self_serialized] = self.xorname
+        self.a2a[self_serialized] = self.gimel_addr
 
         log.debug(f'Current node addr: {self.socket.getsockname()}')
 
@@ -191,32 +191,37 @@ class Peer:
             job = self.serve_node(client_socket)
             self.scheduler.spawn(job)
 
-    def on_peer_connect(self, method, host, port, xorname):
+    def on_peer_connect(self, method, host, port, gimel_addr):
         """Add new peer to a2a-dict object and share with
         other peers in current network via shared_factory.
         """
 
-        self.peer_proxy.add_serialized(host, port, xorname)
+        # this call changes the a2a-dict
+        self.peer_proxy.add_serialized(host, port, gimel_addr)
+        # share connected peers with other nodes
         self.shared_factory.share_one('connected_peers')
 
-    def on_peer_disconnect(self, method, host, port):
-        # Actual only for super-node
-        serialized = peer2key(host, port)
-        del self.a2a[serialized]
-        del self.a2s[serialized]
-
     def check_connected(self):
-        for sock in self.a2s.values():
+        to_remove = dict()
+        for serialized, sock in self.a2s.items():
             di = jrpc('ping', {})
-            send(sock, json.dumps(di))
+            try:
+                send(sock, json.dumps(di))
+            except (OSError, ConnectionResetError):
+                to_remove[serialized] = sock
+
+        for serialized, sock in to_remove.items():
+            log.warning(f'Remove recipient {serialized}')
+            self.shared_factory.remove_recipient(sock)
+            del self.a2a[serialized]
+            del self.a2s[serialized]
 
     def serve_node(self, client_socket):
         """A separate job for servicing a separate network node.
         Is a generator and triggers new messages from this node
 
         :param client_socket: client socket for servicing
-        :return: None
-
+        :return:
         """
 
         while True:
@@ -244,14 +249,70 @@ class Peer:
                 if js['method'] == 'peer.connect':
                     self.on_peer_connect(js['method'], **js['params'])
                 elif js['method'] == 'peer.disconnect':
-                    self.on_peer_disconnect(js['method'], **js['params'])
+                    print('PASS:)')
+                    # self.on_peer_disconnect(js['method'], **js['params'])
 
             yield Scheduler.WRITE, client_socket
 
     def lifeguard(self):
-        # TODO (qnbhd) make lifeguard search algorithm
-        return min(key2peer(serialized)
-                   for serialized in self.a2a.keys())
+        # TODO (qnbhd): make lifeguard search algorithm
+        return Addr(*min(key2peer(serialized)
+                    for serialized in self.a2a.keys()))
+
+    def on_super_node_disconnect(self, super_node_socket):
+        # TODO (qnbhd): do we really have to
+        #  immediately disconnect from all reading-jobs?
+        # noinspection PyProtectedMember
+        self.scheduler._readable.clear()
+
+        with suppress(KeyError):
+            key = peer2key(*self.netaddr)
+            del self.a2a[key]
+
+        log.warning('Super-node was disconnected, try reconnect'
+                    ' with timeout 10sec.')
+
+        try_receive = recv_timeout(10)
+
+        if try_receive:
+            # the case when we managed to reconnect to the super-node
+            pass
+
+        lifeguard = self.lifeguard()
+        log.warning(f'Lifeguard: {lifeguard}')
+
+        if self.socket.getsockname() == lifeguard:
+            # lifeguard node will try to take over the server's
+            # responsibilities and establish a connection.
+            # The rest of the nodes should connect to the
+            # current lifeguard
+            log.warning('My node is lifeguard. Try to take responsibilities.')
+
+            self.on_super_node_destroy(*self.netaddr)
+
+            # create new accept job
+            acceptor = self.accept_connections()
+            self.scheduler.spawn(acceptor)
+
+            # remove current job from scheduler
+            yield Scheduler.DELETE_JOB, None
+
+        # branch only if we are not a lifeguard node,
+        # and could not reconnect to the last super-node
+
+        time.sleep(5)
+
+        # trying to create new connection
+        self.scheduler.clear()
+
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.connect(lifeguard)
+
+        super_server = self.serve_super_node(self.socket)
+        self.scheduler.spawn(super_server)
+
+        yield Scheduler.DELETE_JOB, None
 
     def serve_super_node(self, server_socket):
         while True:
@@ -261,54 +322,7 @@ class Peer:
             if not message:
                 log.info('All peers are dead.')
                 # noinspection PyProtectedMember
-                self.scheduler._readable.clear()
-
-                with suppress(KeyError):
-                    key = peer2key(*self.netaddr)
-                    del self.a2a[key]
-
-                lg_host, lg_port = self.lifeguard()
-
-                log.warning(f'Lifeguard name: ({lg_host}, {lg_port})')
-
-                if self.socket.getsockname() == (lg_host, lg_port):
-                    log.warning('My node is lifeguard. Try to take responsibilities.')
-                    self.on_super_node_destroy(lg_host, lg_port)
-
-                    acceptor = self.accept_connections()
-                    self.scheduler.spawn(acceptor)
-
-                    yield 'DELETE', None
-                else:
-                    i = 0
-                    while i < 5 or server_socket.recv(4096):
-                        log.warning(f'Trying connection to {self.netaddr}')
-                        print(self.a2a)
-
-                        params = [
-                            {
-                                'host': key2peer(serialized)[0],
-                                'port': key2peer(serialized)[1],
-                                'address': self.a2a[serialized]
-                            }
-                            for serialized, name in self.a2a.items()
-                        ]
-
-                        log.warning(json.dumps(params, indent=4))
-                        time.sleep(2)
-                        i += 1
-
-                    # trying to create new connection
-                    self.scheduler.clear()
-
-                    self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    self.socket.connect((lg_host, lg_port))
-
-                    super_server = self.serve_super_node(self.socket)
-                    self.scheduler.spawn(super_server)
-
-                    yield 'DELETE', None
+                yield self.on_super_node_disconnect(server_socket)
 
             js = json.loads(message)
             log.debug(json.dumps(js, indent=4))
@@ -316,9 +330,6 @@ class Peer:
             if js['method'] == 'shared.share':
                 params = js['params']
                 self.shared_factory.loads(params)
-                #
-                # for u in params:
-                #     self.peer_proxy.add_serialized(u['host'], u['port'], u['serialized'])
 
             # TODO (qnbhd) what about message send method?
             # recipient = random.choice(list(self.a2a.values()))
@@ -340,12 +351,12 @@ class Peer:
             "from": {
                 "host": h,
                 "port": p,
-                "xorname": self.xorname
+                "gimel_addr": self.gimel_addr
             },
             "to": {
                 "host": to_h,
                 "port": to_p,
-                "xorname": to
+                "gimel_addr": to
             },
             "message": msg
         })

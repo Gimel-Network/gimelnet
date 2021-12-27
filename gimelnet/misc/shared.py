@@ -1,4 +1,6 @@
 import json
+import zlib
+from contextlib import suppress
 from socket import socket
 from typing import TypeVar, List, Dict
 
@@ -37,14 +39,24 @@ class SharedFactory:
         self.recipients: List[socket] = list()
 
     def push(self, identifier: str, sh: T):
-        shared = _Shared(sh)
-        self.shared_pool[identifier] = shared
+        self.shared_pool[identifier] = _Shared(sh)
 
     def update(self, identifier: str, new_obj: T):
-        self.shared_pool[identifier].update(new_obj)
+        if identifier in self.shared_pool:
+            self.shared_pool[identifier].update(new_obj)
+        else:
+            self.push(identifier, new_obj)
 
     def add_recipient(self, recipient_socket: socket):
         self.recipients.append(recipient_socket)
+
+    def remove_recipient(self, recipient_socket: socket):
+        self.recipients.remove(recipient_socket)
+
+    def loads(self, fetched_data: dict):
+        log.debug(f'Fetch data {fetched_data}')
+        for identifier, new_obj in fetched_data.items():
+            self.update(identifier, new_obj)
 
     def share(self):
         if not self.recipients:
@@ -61,7 +73,8 @@ class SharedFactory:
         dumped = json.dumps(di)
 
         for recipient in self.recipients:
-            send(recipient, dumped)
+            with suppress(OSError):
+                send(recipient, dumped)
             log.debug(f'Share objects from factory with with {recipient}')
 
     def share_one(self, identifier: str):
@@ -69,8 +82,10 @@ class SharedFactory:
             return
 
         di = {identifier: self.shared_pool[identifier].value()}
-        di = jrpc('shared.share', di)
+        di = jrpc('shared.share', **di)
+        dumped = json.dumps(di)
 
         for recipient in self.recipients:
-            send(recipient, di)
+            with suppress(OSError):
+                send(recipient, dumped)
             log.debug(f'Share object {identifier} with {recipient}')
