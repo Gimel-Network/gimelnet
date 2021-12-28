@@ -282,7 +282,7 @@ class Peer:
         log.warning('Super-node was disconnected, try reconnect'
                     ' with timeout 10sec.')
 
-        try_receive = recv_timeout(10)
+        try_receive = recv_timeout(super_node_socket, timeout=10)
 
         if try_receive:
             # the case when we managed to reconnect to the super-node
