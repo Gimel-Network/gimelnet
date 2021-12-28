@@ -107,14 +107,11 @@ class Peer:
             self.socket.bind(self.netaddr)
         except OSError as e:
             error_code = e.errno
-            print(e)
-
-        print(error_code)
 
         if not error_code or error_code == 99:
-            request_params = (get_ip(), DEFAULT_BIND_PORT)
-
-            self.socket.bind(request_params)
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind(('0.0.0.0', DEFAULT_BIND_PORT))
             self.socket.listen()
 
             log.info('Connect as server node.')
@@ -125,24 +122,18 @@ class Peer:
             # work, then we will try to connect to it. We assume that
             # RPC always gives us reliable information.
 
+            request_params = (get_ip(), DEFAULT_BIND_PORT)
             response = requests.post(endpoint, json=request("endpoint.set", request_params))
             log.debug(response.json())
 
             acceptor = self.accept_connections()
             self.scheduler.spawn(acceptor)
         else:
-            self.socket.setblocking(False)
             try:
-                print('IN')
-                print(self.netaddr)
                 self.socket.connect(self.netaddr)
-                print(self.socket.getsockopt(socket.SOL_SOCKET, 2))
-                print('BI')
-
                 self.is_super = False
                 sh, sp = self.socket.getsockname()
 
-                print(sh, sp)
                 di = jrpc('peer.connect',
                           host=sh, port=sp,
                           gimel_addr=self.gimel_addr)
