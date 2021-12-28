@@ -1,4 +1,5 @@
 import json
+import traceback
 
 from gimelnet.misc import logging
 
@@ -106,11 +107,14 @@ class Peer:
             self.socket.bind(self.netaddr)
         except OSError as e:
             error_code = e.errno
+            print(e)
+
+        print(error_code)
 
         if not error_code or error_code == 99:
-            request_params = [get_ip(), DEFAULT_BIND_PORT]
+            request_params = (get_ip(), DEFAULT_BIND_PORT)
 
-            self.socket.bind(*request_params)
+            self.socket.bind(request_params)
             self.socket.listen()
 
             log.info('Connect as server node.')
@@ -127,25 +131,35 @@ class Peer:
             acceptor = self.accept_connections()
             self.scheduler.spawn(acceptor)
         else:
-            self.socket.connect(self.netaddr)
-            self.is_super = False
-            sh, sp = self.socket.getsockname()
+            self.socket.setblocking(False)
+            try:
+                print('IN')
+                print(self.netaddr)
+                self.socket.connect(self.netaddr)
+                print(self.socket.getsockopt(socket.SOL_SOCKET, 2))
+                print('BI')
 
-            di = jrpc('peer.connect',
-                      host=sh, port=sp,
-                      gimel_addr=self.gimel_addr)
+                self.is_super = False
+                sh, sp = self.socket.getsockname()
 
-            dumped = json.dumps(di)
+                print(sh, sp)
+                di = jrpc('peer.connect',
+                          host=sh, port=sp,
+                          gimel_addr=self.gimel_addr)
 
-            send(self.socket, dumped)
+                dumped = json.dumps(di)
 
-            super_server = self.serve_super_node(self.socket)
-            self.scheduler.spawn(super_server)
+                send(self.socket, dumped)
 
-            log.info('Connect as peer node.')
+                super_server = self.serve_super_node(self.socket)
+                self.scheduler.spawn(super_server)
 
-            # noinspection PyProtectedMember
-            self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
+                log.info('Connect as peer node.')
+
+                # noinspection PyProtectedMember
+                self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
+            except Exception as e:
+                traceback.print_exc(e)
 
         self_serialized = peer2key(*self.netaddr)
         self.a2a[self_serialized] = self.gimel_addr
