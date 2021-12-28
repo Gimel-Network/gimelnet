@@ -85,6 +85,7 @@ class Scheduler:
                 except Exception as e:
                     if callback := self._exceptors.get(type(e), lambda *_, **__: None):
                         callback(e)
-                    console.print_exception(show_locals=True)
+                    else:
+                        console.print_exception(show_locals=True)
         finally:
             self._finalizer()
