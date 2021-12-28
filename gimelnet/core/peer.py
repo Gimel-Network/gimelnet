@@ -101,8 +101,16 @@ class Peer:
         # acts as a coordinator in the current p2p network
         self.is_super = True
 
+        error_code = None
         try:
             self.socket.bind(self.netaddr)
+        except OSError as e:
+            error_code = e.errno
+
+        if not error_code or error_code == 99:
+            request_params = [get_ip(), DEFAULT_BIND_PORT]
+
+            self.socket.bind(*request_params)
             self.socket.listen()
 
             log.info('Connect as server node.')
@@ -113,31 +121,12 @@ class Peer:
             # work, then we will try to connect to it. We assume that
             # RPC always gives us reliable information.
 
-            request_params = [get_ip(), DEFAULT_BIND_PORT]
             response = requests.post(endpoint, json=request("endpoint.set", request_params))
             log.debug(response.json())
 
             acceptor = self.accept_connections()
             self.scheduler.spawn(acceptor)
-        except ConnectionRefusedError:
-            self.socket.bind(self.netaddr)
-            self.socket.listen()
-
-            log.info('Connect as server node.')
-
-            # here the logic is as follows: we will ask our rpc about
-            # which host (super-node) is relevant at the moment, then
-            # we will try to make bind for this address, if it does not
-            # work, then we will try to connect to it. We assume that
-            # RPC always gives us reliable information.
-
-            request_params = [get_ip(), DEFAULT_BIND_PORT]
-            response = requests.post(endpoint, json=request("endpoint.set", request_params))
-            log.debug(response.json())
-
-            acceptor = self.accept_connections()
-            self.scheduler.spawn(acceptor)
-        except OSError:
+        else:
             self.socket.connect(self.netaddr)
             self.is_super = False
             sh, sp = self.socket.getsockname()
