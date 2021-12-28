@@ -32,6 +32,10 @@ class _Shared:
         self.recipients.append(recipient_socket)
 
 
+class SharedObjectExistsError(Exception):
+    """Raises if shared object is exists in current shared pool"""
+
+
 class SharedFactory:
 
     def __init__(self):
@@ -39,7 +43,11 @@ class SharedFactory:
         self.recipients: List[socket] = list()
 
     def push(self, identifier: str, sh: T):
-        self.shared_pool[identifier] = _Shared(sh)
+        if identifier not in self.shared_pool:
+            self.shared_pool[identifier] = _Shared(sh)
+        else:
+            raise SharedObjectExistsError(f'The {identifier} is exists'
+                                          f' in current shared pool.')
 
     def update(self, identifier: str, new_obj: T):
         if identifier in self.shared_pool:

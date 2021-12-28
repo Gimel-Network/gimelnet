@@ -176,7 +176,7 @@ class Peer:
         if response:
             # TODO (qnbhd) add verifying for response
             pass
-        
+
         log.warning(f'Change super-node to {request_params}')
 
     def accept_connections(self) -> Generator:
