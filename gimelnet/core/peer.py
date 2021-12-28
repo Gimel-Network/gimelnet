@@ -165,8 +165,8 @@ class Peer:
             # noinspection PyProtectedMember
             self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
 
-        self_serialized = peer2key(*self.netaddr)
-        self.a2a[self_serialized] = self.gimel_addr
+            self_serialized = peer2key(get_ip(), sp)
+            self.a2a[self_serialized] = self.gimel_addr
 
         log.debug(f'Current node addr: {self.socket.getsockname()}')
 
