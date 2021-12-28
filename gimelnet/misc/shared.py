@@ -69,6 +69,9 @@ class SharedDict(SharedObject):
     def __repr__(self):
         return str(self)
 
+    def keys(self):
+        return self._inner.keys()
+
     def _set(self, *keys, value):
         rkey = keys[-1]
 
@@ -199,7 +202,7 @@ class SharedFactory:
         ids = self.shared_pool.keys()
 
         # noinspection PyProtectedMember
-        values = map(lambda v: v._get_inner(), self.shared_pool.values())
+        values = map(lambda v: v._inner, self.shared_pool.values())
         full_obj = zip(ids, values)
 
         # make correct request for our protocol
