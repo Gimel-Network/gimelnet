@@ -5,6 +5,8 @@ import zlib
 from contextlib import suppress
 from typing import NamedTuple
 
+import requests
+
 CHUNK_SIZE = 4096
 DEFAULT_BIND_PORT = 6666
 
@@ -84,12 +86,7 @@ def recv_timeout(the_socket, timeout=0.01):
 
 
 def get_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    ggl = ('8.8.8.8', 80)
-    s.connect(ggl)
-    ip, _ = s.getsockname()
-    s.close()
-    return ip
+    return requests.get('https://api.ipify.org').content.decode('utf8')
 
 
 class Addr(NamedTuple):
