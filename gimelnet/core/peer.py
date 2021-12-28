@@ -1,3 +1,4 @@
+import errno
 import json
 import traceback
 
@@ -64,6 +65,32 @@ def interrogate_endpoint(endpoint_url):
     return Addr.from_pair(get_ip(), DEFAULT_BIND_PORT)
 
 
+CONNECTED_AS_PEER = 1
+CONNECTED_AS_BINDER = 2
+
+
+def connect_or_bind(addr: Addr):
+
+    def build_socket():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return sock
+
+    # firstly we try connect to addr
+
+    s = build_socket()
+    try:
+        s.connect(addr)
+        return s, CONNECTED_AS_PEER
+    except ConnectionRefusedError:
+        pass
+
+    s = build_socket()
+    s.bind(('0.0.0.0', DEFAULT_BIND_PORT))
+
+    return s, CONNECTED_AS_BINDER
+
+
 class Peer:
 
     def __init__(self, gimel_addr, endpoint: str):
@@ -72,9 +99,6 @@ class Peer:
         self.gimel_addr = gimel_addr
         self.netaddr = interrogate_endpoint(endpoint)
         self.endpoint = endpoint
-
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         # host+port to gimel_addr
         self.a2a = dict()
@@ -102,16 +126,9 @@ class Peer:
         # acts as a coordinator in the current p2p network
         self.is_super = True
 
-        error_code = None
-        try:
-            self.socket.bind(self.netaddr)
-        except OSError as e:
-            error_code = e.errno
+        self.socket, code = connect_or_bind(self.netaddr)
 
-        if not error_code or error_code == 99:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.socket.bind(('0.0.0.0', DEFAULT_BIND_PORT))
+        if code == CONNECTED_AS_BINDER:
             self.socket.listen()
 
             log.info('Connect as server node.')
@@ -129,28 +146,25 @@ class Peer:
             acceptor = self.accept_connections()
             self.scheduler.spawn(acceptor)
         else:
-            try:
-                self.socket.connect(self.netaddr)
-                self.is_super = False
-                sh, sp = self.socket.getsockname()
+            self.socket.connect(self.netaddr)
+            self.is_super = False
+            sh, sp = self.socket.getsockname()
 
-                di = jrpc('peer.connect',
-                          host=sh, port=sp,
-                          gimel_addr=self.gimel_addr)
+            di = jrpc('peer.connect',
+                      host=sh, port=sp,
+                      gimel_addr=self.gimel_addr)
 
-                dumped = json.dumps(di)
+            dumped = json.dumps(di)
 
-                send(self.socket, dumped)
+            send(self.socket, dumped)
 
-                super_server = self.serve_super_node(self.socket)
-                self.scheduler.spawn(super_server)
+            super_server = self.serve_super_node(self.socket)
+            self.scheduler.spawn(super_server)
 
-                log.info('Connect as peer node.')
+            log.info('Connect as peer node.')
 
-                # noinspection PyProtectedMember
-                self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
-            except Exception as e:
-                traceback.print_exc(e)
+            # noinspection PyProtectedMember
+            self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
 
         self_serialized = peer2key(*self.netaddr)
         self.a2a[self_serialized] = self.gimel_addr
