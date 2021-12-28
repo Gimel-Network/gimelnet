@@ -13,7 +13,7 @@ from jsonrpcclient import parse, request
 import requests
 
 from gimelnet.core.scheduler import Scheduler
-from gimelnet.misc.shared import SharedFactory
+from gimelnet.misc.shared import SharedFactory, SharedList, SharedDict
 from gimelnet.misc.utils import Addr, get_ip, send, jrpc, peer2key, key2peer, recv_timeout, is_port_open
 
 log = logging.getLogger(__name__)
@@ -29,9 +29,9 @@ class p2p(NamedTuple):
 
 class PeerProxy:
 
-    def __init__(self, a2a, a2s):
-        self.a2a = a2a
+    def __init__(self, a2s, shared_factory: SharedFactory):
         self.a2s = a2s
+        self.shared_factory = shared_factory
 
     def get_socket(self, host, port):
         address = self.get_address(host, port)
@@ -39,7 +39,7 @@ class PeerProxy:
 
     def get_address(self, host, port):
         serialized = peer2key(host, port)
-        return self.a2a[serialized]
+        return self.shared_factory['connected_peers', serialized]
 
     def add_socket(self, host, port, socket_):
         serialized = peer2key(host, port)
@@ -47,7 +47,7 @@ class PeerProxy:
 
     def add_serialized(self, host, port, address):
         serialized = peer2key(host, port)
-        self.a2a[serialized] = address
+        self.shared_factory['connected_peers', serialized] = address
 
 
 def interrogate_endpoint(endpoint_url):
@@ -71,7 +71,6 @@ CONNECTED_AS_BINDER = 2
 
 
 def connect_or_bind(addr: Addr):
-
     def build_socket():
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -101,11 +100,8 @@ class Peer:
         self.netaddr = interrogate_endpoint(endpoint)
         self.endpoint = endpoint
 
-        # host+port to gimel_addr
-        self.a2a = dict()
         # host+port to socket
         self.a2s = dict()
-        self.peer_proxy = PeerProxy(self.a2a, self.a2s)
 
         self.scheduler = Scheduler()
         self.scheduler.add_finalizer(self.finalizer)
@@ -115,12 +111,13 @@ class Peer:
 
         self.shared_factory = SharedFactory()
 
-        payload = ['1', '2']
-        self.shared_factory.push('payload', payload)
-        self.shared_factory.push('connected_peers', self.a2a)
+        self.shared_factory.push('payload', SharedList(['1', '2']))
+        self.shared_factory.push('connected_peers', SharedDict())
 
         self.scheduler.spawn_periodic(self.check_connected, 3)
         self.scheduler.spawn_periodic(self.shared_factory.share, 5)
+
+        self.peer_proxy = PeerProxy(self.a2s, self.shared_factory)
 
         # Is this node a super node?
         # Super node - one that currently
@@ -145,7 +142,7 @@ class Peer:
             log.debug(response.json())
 
             self_serialized = peer2key(*request_params)
-            self.a2a[self_serialized] = self.gimel_addr
+            self.shared_factory['connected_peers', self_serialized] = self.gimel_addr
 
             acceptor = self.accept_connections()
             self.scheduler.spawn(acceptor)
@@ -215,7 +212,6 @@ class Peer:
         """
 
         while True:
-
             yield Scheduler.READ, self.socket
 
             client_socket, address = self.socket.accept()
@@ -248,9 +244,11 @@ class Peer:
 
         for serialized, sock in to_remove.items():
             log.warning(f'Remove recipient {serialized}')
+
             self.shared_factory.remove_recipient(sock)
-            del self.a2a[serialized]
             del self.a2s[serialized]
+
+            self.shared_factory.delete('connected_peers', serialized)
 
     def serve_node(self, client_socket):
         """A separate job for servicing a separate network node.
@@ -284,8 +282,6 @@ class Peer:
                 # TODO (qnbhd) make registration callbacks mechanism
                 if js['method'] == 'peer.connect':
                     self.on_peer_connect(js['method'], **js['params'])
-                elif js['method'] == 'peer.disconnect':
-                    print('PASS:)')
                     # self.on_peer_disconnect(js['method'], **js['params'])
 
             yield Scheduler.WRITE, client_socket
@@ -308,7 +304,12 @@ class Peer:
             return 1 if is_open_x else -1
 
         key = cmp_to_key(comparator)
-        return Addr(*min(self.a2a.keys(), key=key))
+
+        peers = self.shared_factory['connected_peers']
+
+        log.warning(peers)
+
+        return Addr(*min(peers.keys(), key=key))
 
     def on_super_node_disconnect(self, super_node_socket):
         # TODO (qnbhd): do we really have to
@@ -318,7 +319,7 @@ class Peer:
 
         with suppress(KeyError):
             key = peer2key(*self.netaddr)
-            del self.a2a[key]
+            self.shared_factory.delete('connected_peers', key)
 
         log.warning('Super-node was disconnected, try reconnect'
                     ' with timeout 10sec.')
@@ -367,6 +368,7 @@ class Peer:
 
     def serve_super_node(self, server_socket):
         while True:
+            print('Iter')
             yield Scheduler.READ, server_socket
             message = recv_timeout(server_socket)
 
@@ -377,6 +379,8 @@ class Peer:
 
             js = json.loads(message)
             log.debug(json.dumps(js, indent=4))
+
+            log.warning(self.shared_factory['connected_peers'])
 
             if js['method'] == 'shared.share':
                 params = js['params']
@@ -391,7 +395,11 @@ class Peer:
     def run(self):
         self.scheduler.run()
 
+    # noinspection PyUnreachableCode
     def send_message(self, to, msg):
+
+        raise Exception()
+
         transfer = dict(zip(self.a2a.values(), self.a2a.keys()))
         address = transfer[to]
 
@@ -413,4 +421,3 @@ class Peer:
         })
 
         send(self.a2s[address] if self.is_super else self.socket, json.dumps(di))
-
