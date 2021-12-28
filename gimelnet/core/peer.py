@@ -1,6 +1,7 @@
 import errno
 import json
 import traceback
+from functools import cmp_to_key
 
 from gimelnet.misc import logging
 
@@ -13,7 +14,7 @@ import requests
 
 from gimelnet.core.scheduler import Scheduler
 from gimelnet.misc.shared import SharedFactory
-from gimelnet.misc.utils import Addr, get_ip, send, jrpc, peer2key, key2peer, recv_timeout
+from gimelnet.misc.utils import Addr, get_ip, send, jrpc, peer2key, key2peer, recv_timeout, is_port_open
 
 log = logging.getLogger(__name__)
 
@@ -291,8 +292,23 @@ class Peer:
 
     def lifeguard(self):
         # TODO (qnbhd): make lifeguard search algorithm
-        return Addr(*min(key2peer(serialized)
-                    for serialized in self.a2a.keys()))
+        def comparator(x, y):
+            addr_x = key2peer(x)
+            addr_y = key2peer(y)
+
+            is_open_x = is_port_open(*addr_x)
+            is_open_y = is_port_open(*addr_y)
+
+            if is_open_x and is_open_y:
+                return 1 if addr_x > addr_y else -1
+
+            if not is_open_x and not is_open_y:
+                raise Exception('No lifeguard peers available')
+
+            return 1 if is_open_x else -1
+
+        key = cmp_to_key(comparator)
+        return Addr(*min(self.a2a.keys(), key=key))
 
     def on_super_node_disconnect(self, super_node_socket):
         # TODO (qnbhd): do we really have to

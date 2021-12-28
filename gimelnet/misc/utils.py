@@ -2,7 +2,7 @@ import logging
 import socket
 import time
 import zlib
-from contextlib import suppress
+from contextlib import suppress, closing
 from typing import NamedTuple
 
 import requests
@@ -87,6 +87,11 @@ def recv_timeout(the_socket, timeout=0.01):
 
 def get_ip():
     return requests.get('https://api.ipify.org').content.decode('utf8')
+
+
+def is_port_open(host, port):
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        return sock.connect_ex((host, port))
 
 
 class Addr(NamedTuple):
