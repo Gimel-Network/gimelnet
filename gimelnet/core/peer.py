@@ -70,6 +70,7 @@ class Peer:
 
         self.gimel_addr = gimel_addr
         self.netaddr = interrogate_endpoint(endpoint)
+        self.endpoint = endpoint
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -168,6 +169,15 @@ class Peer:
 
         acceptor = self.accept_connections()
         self.scheduler.spawn(acceptor)
+
+        request_params = [get_ip(), DEFAULT_BIND_PORT]
+        response = requests.post(self.endpoint, json=request("endpoint.set", request_params))
+
+        if response:
+            # TODO (qnbhd) add verifying for response
+            pass
+        
+        log.warning(f'Change super-node to {request_params}')
 
     def accept_connections(self) -> Generator:
         """Accept new connections to current network. The blocking accept
