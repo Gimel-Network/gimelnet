@@ -146,12 +146,11 @@ class Peer:
             acceptor = self.accept_connections()
             self.scheduler.spawn(acceptor)
         else:
-            self.socket.connect(self.netaddr)
             self.is_super = False
-            sh, sp = self.socket.getsockname()
+            _, sp = self.socket.getsockname()
 
             di = jrpc('peer.connect',
-                      host=sh, port=sp,
+                      host=get_ip(), port=sp,
                       gimel_addr=self.gimel_addr)
 
             dumped = json.dumps(di)
