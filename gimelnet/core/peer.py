@@ -79,24 +79,15 @@ def connect_or_bind(addr: Addr):
 
     # firstly we try connect to addr
     # ngrok.disconnect(addr.host)
-    response = None
-    err_no = None
-
-    try:
-        response = requests.get(addr.host, timeout=3)
-    except requests.exceptions.RequestException as e:
-        err_no = e.errno
-        print(e)
 
     s = build_socket()
-    if response or response.status_code == 503:
-        try:
-            s.settimeout(2)
-            s.connect(addr)
-            s.settimeout(None)
-            return s, CONNECTED_AS_PEER
-        except (ConnectionRefusedError, socket.timeout):
-            pass
+    try:
+        s.settimeout(2)
+        s.connect(addr)
+        s.settimeout(None)
+        return s, CONNECTED_AS_PEER
+    except (ConnectionRefusedError, socket.timeout, socket.gaierror):
+        pass
 
     s = build_socket()
     s.bind(('localhost', DEFAULT_BIND_PORT))
@@ -152,7 +143,10 @@ class Peer:
 
             tunnel = ngrok.connect(DEFAULT_BIND_PORT, 'tcp')
 
-            request_params = (tunnel.public_url, 80)
+            tunnel_host, tunnel_port = tunnel.public_url.replace('tcp://', '').split(':')
+            tunnel_port = int(tunnel_port)
+
+            request_params = (tunnel_host, tunnel_port)
             response = requests.post(endpoint, json=request("endpoint.set", request_params))
             log.debug(response.json())
 
