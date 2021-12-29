@@ -26,7 +26,7 @@ def endpoints_get() -> Result:
 
 @method(name='endpoints.add')
 def endpoints_add(host: str, port: int) -> Result:
-    storage['endpoints'] = list(chain(storage['endpoints'] or [], [f'{host}:{port}']))
+    storage['endpoints'] = list(set(chain(storage['endpoints'] or [], [f'{host}:{port}'])))
     return Success()
 
 

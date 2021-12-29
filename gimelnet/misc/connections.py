@@ -10,19 +10,19 @@ from gimelnet.misc import logging
 from gimelnet.misc.utils import Addr, recv_timeout
 
 
-class Connection(dataclass):
-
-    lpub: Addr
-    lpriv: Addr
-    rpub: Addr
-    rpriv: Addr
-    socket_instance: socket
-
-    def speak(self, msg):
-        pass
-
-    def send(self, timeout=None):
-        pass
+# class Connection(dataclass):
+#
+#     lpub: Addr
+#     lpriv: Addr
+#     rpub: Addr
+#     rpriv: Addr
+#     socket_instance: socket
+#
+#     def speak(self, msg):
+#         pass
+#
+#     def send(self, timeout=None):
+#         pass
 
 
 # return graph
@@ -36,8 +36,15 @@ def pool_rpc(rpc) -> List[Addr]:
 
 
 def notify_rpc(rpc, addr):
-    params = request('endpoints.add', {'addr': addr})
-    response = requests.post(rpc, json=params)
+
+    # TODO (qnbhd) check connection
+    response = requests.post(rpc, json=request(
+        'endpoints.add',
+        params={
+            'host': addr[0],
+            'port': addr[1]
+            }
+    ))
 
     if response:
         return True

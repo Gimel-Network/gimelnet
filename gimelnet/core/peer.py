@@ -116,8 +116,8 @@ class Peer:
 
         self.shared_factory = SharedFactory()
 
-        self.shared_factory.push('payload', SharedList(['1', '2']))
-        self.shared_factory.push('connected_peers', SharedDict())
+        # self.shared_factory.push('payload', SharedList(['1', '2']))
+        # self.shared_factory.push('connected_peers', SharedDict())
 
         self.scheduler.spawn_periodic(self.check_connected, 3)
         self.scheduler.spawn_periodic(self.shared_factory.share, 5)
