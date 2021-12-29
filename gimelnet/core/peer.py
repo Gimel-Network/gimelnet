@@ -86,9 +86,10 @@ def connect_or_bind(addr: Addr):
         response = requests.get(addr.host, timeout=3)
     except requests.exceptions.RequestException as e:
         err_no = e.errno
+        print(e)
 
     s = build_socket()
-    if response or err_no == 503:
+    if response or response.status_code == 503:
         try:
             s.settimeout(2)
             s.connect(addr)
@@ -149,7 +150,7 @@ class Peer:
             # work, then we will try to connect to it. We assume that
             # RPC always gives us reliable information.
 
-            tunnel = ngrok.connect(addr=DEFAULT_BIND_PORT)
+            tunnel = ngrok.connect(DEFAULT_BIND_PORT, 'tcp')
 
             request_params = (tunnel.public_url, 80)
             response = requests.post(endpoint, json=request("endpoint.set", request_params))
