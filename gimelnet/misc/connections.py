@@ -7,7 +7,7 @@ from jsonrpcclient import request
 from pyngrok import ngrok
 
 from gimelnet.misc import logging
-from gimelnet.misc.utils import Addr, recv_timeout
+from gimelnet.misc.utils import Addr, recv_timeout, get_ip
 
 
 # class Connection(dataclass):
@@ -30,7 +30,15 @@ def pool_rpc(rpc) -> List[Addr]:
     response = requests.post(rpc, json=request("endpoints.get")).json()
 
     if response:
-        return response['result']
+        ls = response['result'].split('\n')
+        endpoints = []
+
+        for u in ls:
+            h, p = u.split(':')
+            p = int(p)
+            endpoints.append(Addr(h, p))
+
+        return endpoints
 
     raise Exception()
 
@@ -53,15 +61,16 @@ def notify_rpc(rpc, addr):
 
 
 def in_network(addr):
-    pass
+    return True
 
 
 def pack_message(msg) -> bytes:
     pass
 
 
-DEFAULT_BIND_PORT = 6666
-LOCALHOST = ('127.0.0.1', DEFAULT_BIND_PORT)
+DEFAULT_BIND_HOST = '127.0.0.1'
+DEFAULT_BIND_PORT = 0
+LOCALHOST = (DEFAULT_BIND_HOST, DEFAULT_BIND_PORT)
 
 log = logging.getLogger(__name__)
 
@@ -79,20 +88,17 @@ class ConnectionsDispatcher:
         tun_host, tun_port = tunnel.public_url.replace('tcp://', '').split(':')
         tun_port = int(tun_port)
 
-        tunneled_addr = (tun_host, tun_port)
+        self.tunneled_addr = Addr(tun_host, tun_port)
 
-        log.info(f'Tunneled listener address: {tunneled_addr}')
+        log.info(f'Tunneled listener address: {self.tunneled_addr}')
 
-        notify_rpc(rpc, tunneled_addr)
-
-        # as client
-        self.speaker = self._build_socket()
-
-        log.info(f'Speaker address: {tunneled_addr}')
+        notify_rpc(rpc, self.tunneled_addr)
 
         self.endpoints = pool_rpc(rpc)
 
-        self.connections_pool: Dict[Tuple[str, int], socket.socket] = dict()
+        print(self.endpoints)
+
+        self.connections_pool: Dict[Addr, socket.socket] = dict()
 
     @staticmethod
     def _build_socket():
@@ -107,17 +113,33 @@ class ConnectionsDispatcher:
             # bad
             return
 
-        self.connections_pool[listen_address] = listen_socket
+        self.connections_pool[Addr.from_pair(listen_address)] = listen_socket
+
+        return listen_socket, listen_address
+
+    def connect(self, addr: Addr, timeout=None):
+        if addr == self.tunneled_addr:
+            return
+
+        try:
+            resp_socket = self._build_socket()
+            resp_socket.connect(addr)
+            self.connections_pool[addr] = resp_socket
+            log.info(f'Connection with {addr} was completed.')
+            return True
+        except ConnectionRefusedError:
+            log.warning(f'Connection with {addr} was refused.')
+            return False
 
     # noinspection PyMethodMayBeStatic
-    def _recv(self, sock) -> str:
+    def _recv(self, sock: socket.socket) -> str:
         return recv_timeout(sock)
 
     # noinspection PyMethodMayBeStatic
-    def _send(self, sock, msg) -> bool:
-        return sock.sendall(msg)
+    def _send(self, sock: socket.socket, msg: str):
+        return sock.sendall(msg.encode('utf-8'))
 
-    def receive(self, readable) -> str:
+    def receive(self, readable: Addr) -> str:
 
         readable_socket = self.connections_pool.get(readable, None)
 
@@ -128,14 +150,14 @@ class ConnectionsDispatcher:
 
         return received
 
-    def response(self, writeable, response) -> bool:
+    def request(self, writeable: Addr, response):
 
         writeable_socket = self.connections_pool.get(writeable)
 
         if not writeable_socket:
             raise Exception()
 
-        return self._send(writeable_socket, response)
+        self._send(writeable_socket, response)
 
     def update_pool(self, new_pool):
         pass

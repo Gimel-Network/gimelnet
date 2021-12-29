@@ -106,10 +106,10 @@ class Peer:
         self.gimel_addr = gimel_addr
 
         # host+port to socket
-        self.a2s = dict()
+        # self.a2s = dict()
 
         self.scheduler = Scheduler()
-        self.scheduler.add_finalizer(self.finalizer)
+        # self.scheduler.add_finalizer(self.finalizer)
         self.scheduler.add_exceptor(StopIteration, lambda e: print('Stop Iteration'))
         self.scheduler.add_exceptor(ConnectionResetError,
                                     lambda e: print('Connection reset error'))
@@ -119,15 +119,20 @@ class Peer:
         # self.shared_factory.push('payload', SharedList(['1', '2']))
         # self.shared_factory.push('connected_peers', SharedDict())
 
-        self.scheduler.spawn_periodic(self.check_connected, 3)
-        self.scheduler.spawn_periodic(self.shared_factory.share, 5)
+        # self.scheduler.spawn_periodic(self.check_connected, 3)3
+        # self.scheduler.spawn_periodic(self.shared_factory.share, 5)
 
-        self.peer_proxy = PeerProxy(self.a2s, self.shared_factory)
+        # self.peer_proxy = PeerProxy(self.a2s, self.shared_factory)
 
         # Is this node a super node?
         # Super node - one that currently
         # acts as a coordinator in the current p2p network
         self.connections_dispatcher = ConnectionsDispatcher(rpc)
+
+        for endpoint in self.connections_dispatcher.endpoints:
+            if self.connections_dispatcher.connect(endpoint):
+                job = self.request_job(endpoint)
+                self.scheduler.spawn(job)
         # self.is_super = True
         #
         # self.socket, code = connect_or_bind(self.netaddr)
@@ -181,43 +186,6 @@ class Peer:
         #
         # log.debug(f'Current node addr: {self.socket.getsockname()}')
 
-    def finalizer(self):
-        if self.is_super:
-            return
-
-        host, port = self.socket.getsockname()
-        di = jrpc('peer.disconnect',
-                  host=host, port=port)
-
-        send(self.socket, json.dumps(di))
-
-    # noinspection DuplicatedCode
-    def on_super_node_destroy(self, host, port):
-        """What should happen when the super-node leaves the current network."""
-
-        self.scheduler.clear()
-
-        self.socket.close()
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.socket.bind((host, port))
-        self.socket.listen()
-
-        tunnel = ngrok.connect(addr=DEFAULT_BIND_PORT)
-        log.info('Public tunnel URL: %s', tunnel.public_url)
-
-        acceptor = self.accept_connections()
-        self.scheduler.spawn(acceptor)
-
-        request_params = (tunnel.public_url, DEFAULT_BIND_PORT)
-        response = requests.post(self.endpoint, json=request("endpoint.set", request_params))
-
-        if response:
-            # TODO (qnbhd) add verifying for response
-            pass
-
-        log.warning(f'Change super-node to {request_params}')
-
     def accept_connections(self) -> Generator:
         """Accept new connections to current network. The blocking accept
         call is awaiting a new connection. As soon as a new connection
@@ -228,217 +196,65 @@ class Peer:
         """
 
         while True:
-            yield Scheduler.READ, self.socket
+            yield Scheduler.READ, self.connections_dispatcher.listener
 
-            client_socket, address = self.socket.accept()
+            client_socket, address = self.connections_dispatcher.accept()
 
             log.info(f'Connection from {address}')
-            self.peer_proxy.add_socket(address[0], address[1], client_socket)
+            # self.peer_proxy.add_socket(address[0], address[1], client_socket)
 
-            job = self.serve_node(client_socket)
+            job = self.response_job(client_socket)
             self.scheduler.spawn(job)
 
-    def on_peer_connect(self, method, host, port, gimel_addr):
-        """Add new peer to a2a-dict object and share with
-        other peers in current network via shared_factory.
-        """
-
-        # this call changes the a2a-dict
-        self.peer_proxy.add_serialized(host, port, gimel_addr)
-        cl_sock = self.peer_proxy.get_socket(host, port)
-        self.shared_factory.add_recipient(cl_sock)
-        # share connected peers with other nodes
-        self.shared_factory.share_one('connected_peers')
-
-    def check_connected(self):
-        to_remove = dict()
-        for serialized, sock in self.a2s.items():
-            di = jrpc('ping', {})
-            try:
-                send(sock, json.dumps(di))
-            except (OSError, ConnectionResetError):
-                to_remove[serialized] = sock
-
-        for serialized, sock in to_remove.items():
-            log.warning(f'Remove recipient {serialized}')
-
-            self.shared_factory.remove_recipient(sock)
-
-            del self.a2s[serialized]
-
-            self.shared_factory.delete('connected_peers', serialized)
-
-    def serve_node(self, client_socket):
+    # noinspection PyMethodMayBeStatic
+    def response_job(self, target_addr: Addr):
         """A separate job for servicing a separate network node.
         Is a generator and triggers new messages from this node
 
-        :param client_socket: client socket for servicing
+        :param target_addr: client socket for servicing
         :return:
         """
 
+        target_socket = self.connections_dispatcher.connections_pool[target_addr]
+
         while True:
             # return the control flow to the main loop
-            yield Scheduler.READ, client_socket
+            yield Scheduler.READ, target_socket
 
             # followed by a blocking call-reading of data by timeout
-            response = recv_timeout(client_socket)
+            response = recv_timeout(target_socket)
 
-            log.info(f'Receive message from {client_socket}: ')
+            log.info(f'Receive message from {target_socket}: ')
+            log.info(response)
 
             # socket connection broken sign
             if not response:
-                client_socket.close()
+                target_socket.close()
                 return
 
             # we assume that there may be errors in the transfer
             # of data,but we will simply skip this message if we
             # cannot do anything based on it
-            with suppress(json.JSONDecodeError):
-                js = json.loads(response)
-                log.info(json.dumps(js, indent=4))
+            # with suppress(json.JSONDecodeError):
+            #     js = json.loads(response)
+            #     log.info(json.dumps(js, indent=4))
 
-                # TODO (qnbhd) make registration callbacks mechanism
-                if js['method'] == 'peer.connect':
-                    cl_host, cl_port = client_socket.getpeername()
-                    self.on_peer_connect('peer.connect',
-                                         host=cl_host, port=cl_port,
-                                         gimel_addr=js['params']['gimel_addr'])
-                    # self.on_peer_disconnect(js['method'], **js['params'])
+            yield Scheduler.WRITE, target_socket
 
-            yield Scheduler.WRITE, client_socket
+    def request_job(self, target_addr: Addr):
 
-    def lifeguard(self):
-        # TODO (qnbhd): make lifeguard search algorithm
-        def comparator(x, y):
-            addr_x = key2peer(x)
-            addr_y = key2peer(y)
+        target_socket = self.connections_dispatcher.connections_pool[target_addr]
 
-            is_open_x = is_port_open(*addr_x)
-            is_open_y = is_port_open(*addr_y)
-
-            if is_open_x and is_open_y:
-                return 1 if addr_x > addr_y else -1
-
-            if not is_open_x and not is_open_y:
-                raise Exception('No lifeguard peers available')
-
-            return 1 if is_open_x else -1
-
-        key = cmp_to_key(comparator)
-
-        peers = self.shared_factory['connected_peers']
-
-        log.warning(peers)
-
-        return Addr(*min(peers.keys(), key=key))
-
-    def on_super_node_disconnect(self, super_node_socket):
-        # TODO (qnbhd): do we really have to
-        #  immediately disconnect from all reading-jobs?
-        # noinspection PyProtectedMember
-        self.scheduler._readable.clear()
-
-        with suppress(KeyError):
-            key = peer2key(*self.netaddr)
-            self.shared_factory.delete('connected_peers', key)
-
-        log.warning('Super-node was disconnected, try reconnect'
-                    ' with timeout 10sec.')
-
-        try_receive = recv_timeout(super_node_socket, timeout=10)
-
-        if try_receive:
-            # the case when we managed to reconnect to the super-node
-            pass
-
-        lifeguard = self.lifeguard()
-        log.warning(f'Lifeguard: {lifeguard}')
-
-        if self.socket.getsockname() == lifeguard:
-            # lifeguard node will try to take over the server's
-            # responsibilities and establish a connection.
-            # The rest of the nodes should connect to the
-            # current lifeguard
-            log.warning('My node is lifeguard. Try to take responsibilities.')
-
-            self.on_super_node_destroy(('localhost', DEFAULT_BIND_PORT))
-
-            # create new accept job
-            acceptor = self.accept_connections()
-            self.scheduler.spawn(acceptor)
-
-            # remove current job from scheduler
-            yield Scheduler.DELETE_JOB, None
-
-        # branch only if we are not a lifeguard node,
-        # and could not reconnect to the last super-node
-
-        time.sleep(5)
-
-        # trying to create new connection
-        self.scheduler.clear()
-
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.socket.connect(lifeguard)
-
-        super_server = self.serve_super_node(self.socket)
-        self.scheduler.spawn(super_server)
-
-        yield Scheduler.DELETE_JOB, None
-
-    def serve_super_node(self, server_socket):
         while True:
-            print('Iter')
-            yield Scheduler.READ, server_socket
-            message = recv_timeout(server_socket)
+            yield Scheduler.READ, target_socket
 
-            if not message:
-                log.info('All peers are dead.')
-                # noinspection PyProtectedMember
-                yield self.on_super_node_disconnect(server_socket)
+            self.connections_dispatcher.request(target_addr, 'ping')
 
-            js = json.loads(message)
-            log.debug(json.dumps(js, indent=4))
+            log.debug('Sleep...')
+            time.sleep(5)
 
-            log.warning(self.shared_factory['connected_peers'])
-
-            if js['method'] == 'shared.share':
-                params = js['params']
-                self.shared_factory.loads(params)
-
-            # TODO (qnbhd) what about message send method?
-            # recipient = random.choice(list(self.a2a.values()))
-            # self.send_message(recipient, 'Hello bro')
-
-            yield Scheduler.WRITE, server_socket
+            yield Scheduler.WRITE, target_socket
 
     def run(self):
         self.scheduler.run()
 
-    # noinspection PyUnreachableCode
-    def send_message(self, to, msg):
-
-        raise Exception()
-
-        transfer = dict(zip(self.a2a.values(), self.a2a.keys()))
-        address = transfer[to]
-
-        h, p = self.socket.getsockname()
-        to_h, to_p = address.split('+')
-
-        di = jrpc('message.send', **{
-            "from": {
-                "host": h,
-                "port": p,
-                "gimel_addr": self.gimel_addr
-            },
-            "to": {
-                "host": to_h,
-                "port": to_p,
-                "gimel_addr": to
-            },
-            "message": msg
-        })
-
-        send(self.a2s[address] if self.is_super else self.socket, json.dumps(di))
