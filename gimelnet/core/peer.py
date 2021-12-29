@@ -11,6 +11,7 @@ import socket
 from typing import NamedTuple, Generator
 from jsonrpcclient import parse, request
 import requests
+from pyngrok import ngrok
 
 from gimelnet.core.scheduler import Scheduler
 from gimelnet.misc.shared import SharedFactory, SharedList, SharedDict
@@ -59,7 +60,7 @@ def interrogate_endpoint(endpoint_url):
         json_response = response.json()
         if 'error' not in json_response:
             print(json_response)
-            hp = json_response['result'].split(':')
+            hp = json_response['result'].rsplit(':', maxsplit=1)
             addr = Addr.from_pair(*hp)
             return addr
 
@@ -80,13 +81,15 @@ def connect_or_bind(addr: Addr):
 
     s = build_socket()
     try:
+        s.settimeout(2)
         s.connect(addr)
+        s.settimeout(None)
         return s, CONNECTED_AS_PEER
-    except ConnectionRefusedError:
+    except (ConnectionRefusedError, socket.timeout):
         pass
 
     s = build_socket()
-    s.bind(('0.0.0.0', DEFAULT_BIND_PORT))
+    s.bind(('localhost', DEFAULT_BIND_PORT))
 
     return s, CONNECTED_AS_BINDER
 
@@ -137,9 +140,13 @@ class Peer:
             # work, then we will try to connect to it. We assume that
             # RPC always gives us reliable information.
 
-            request_params = (get_ip(), DEFAULT_BIND_PORT)
+            tunnel = ngrok.connect(addr=DEFAULT_BIND_PORT)
+
+            request_params = (tunnel.public_url, 80)
             response = requests.post(endpoint, json=request("endpoint.set", request_params))
             log.debug(response.json())
+
+            log.info('Public tunnel URL: %s', tunnel.public_url)
 
             self_serialized = peer2key(*request_params)
             self.shared_factory['connected_peers', self_serialized] = self.gimel_addr
@@ -190,10 +197,13 @@ class Peer:
         self.socket.bind((host, port))
         self.socket.listen()
 
+        tunnel = ngrok.connect(addr=DEFAULT_BIND_PORT)
+        log.info('Public tunnel URL: %s', tunnel.public_url)
+
         acceptor = self.accept_connections()
         self.scheduler.spawn(acceptor)
 
-        request_params = [get_ip(), DEFAULT_BIND_PORT]
+        request_params = (tunnel.public_url, DEFAULT_BIND_PORT)
         response = requests.post(self.endpoint, json=request("endpoint.set", request_params))
 
         if response:
@@ -340,7 +350,7 @@ class Peer:
             # current lifeguard
             log.warning('My node is lifeguard. Try to take responsibilities.')
 
-            self.on_super_node_destroy(*self.netaddr)
+            self.on_super_node_destroy(('localhost', DEFAULT_BIND_PORT))
 
             # create new accept job
             acceptor = self.accept_connections()
