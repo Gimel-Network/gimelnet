@@ -80,13 +80,15 @@ def connect_or_bind(addr: Addr):
     # firstly we try connect to addr
     # ngrok.disconnect(addr.host)
     response = None
+    err_no = None
+
     try:
         response = requests.get(addr.host, timeout=3)
-    except requests.exceptions.ConnectTimeout:
-        pass
+    except requests.exceptions.RequestException as e:
+        err_no = e.errno
 
     s = build_socket()
-    if response:
+    if response or err_no == 503:
         try:
             s.settimeout(2)
             s.connect(addr)
