@@ -159,7 +159,7 @@ class SharedFactory:
 
     def set(self, identifier, *keys, value):
         # noinspection PyProtectedMember
-        self.shared_pool[identifier]._set(keys, value=value)
+        self.shared_pool[identifier]._set(*keys, value=value)
 
     def delete(self, identifier, *keys):
         # noinspection PyProtectedMember
@@ -207,12 +207,16 @@ class SharedFactory:
 
         # make correct request for our protocol
         di = jrpc('shared.share', **dict(full_obj))
-        dumped = json.dumps(di)
 
-        for recipient in self.recipients:
-            with suppress(OSError):
-                send(recipient, dumped)
-            log.debug(f'Share objects from factory with with {recipient}')
+        try:
+            dumped = json.dumps(di)
+
+            for recipient in self.recipients:
+                with suppress(OSError):
+                    send(recipient, dumped)
+                log.debug(f'Share objects from factory with with {recipient}')
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     def share_one(self, identifier: str):
         if not self.recipients:

@@ -263,6 +263,7 @@ class Peer:
             log.warning(f'Remove recipient {serialized}')
 
             self.shared_factory.remove_recipient(sock)
+
             del self.a2s[serialized]
 
             self.shared_factory.delete('connected_peers', serialized)
