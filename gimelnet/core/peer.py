@@ -14,6 +14,7 @@ import requests
 from pyngrok import ngrok
 
 from gimelnet.core.scheduler import Scheduler
+from gimelnet.misc.connections import ConnectionsDispatcher
 from gimelnet.misc.shared import SharedFactory, SharedList, SharedDict
 from gimelnet.misc.utils import Addr, get_ip, send, jrpc, peer2key, key2peer, recv_timeout, is_port_open
 
@@ -35,8 +36,8 @@ class PeerProxy:
         self.shared_factory = shared_factory
 
     def get_socket(self, host, port):
-        address = self.get_address(host, port)
-        return self.a2s[address]
+        serialized = peer2key(host, port)
+        return self.a2s[serialized]
 
     def get_address(self, host, port):
         serialized = peer2key(host, port)
@@ -78,12 +79,14 @@ def connect_or_bind(addr: Addr):
         return sock
 
     # firstly we try connect to addr
-    # ngrok.disconnect(addr.host)
+    ngrok.disconnect(addr.host)
 
     s = build_socket()
     try:
         s.settimeout(2)
         s.connect(addr)
+        if recv_timeout(s):
+            raise ConnectionRefusedError()
         s.settimeout(None)
         return s, CONNECTED_AS_PEER
     except (ConnectionRefusedError, socket.timeout, socket.gaierror):
@@ -97,12 +100,10 @@ def connect_or_bind(addr: Addr):
 
 class Peer:
 
-    def __init__(self, gimel_addr, endpoint: str):
+    def __init__(self, gimel_addr, rpc: str):
         # unique node address in p2p network
 
         self.gimel_addr = gimel_addr
-        self.netaddr = interrogate_endpoint(endpoint)
-        self.endpoint = endpoint
 
         # host+port to socket
         self.a2s = dict()
@@ -126,58 +127,59 @@ class Peer:
         # Is this node a super node?
         # Super node - one that currently
         # acts as a coordinator in the current p2p network
-        self.is_super = True
-
-        self.socket, code = connect_or_bind(self.netaddr)
-
-        if code == CONNECTED_AS_BINDER:
-            self.socket.listen()
-
-            log.info('Connect as server node.')
-
-            # here the logic is as follows: we will ask our rpc about
-            # which host (super-node) is relevant at the moment, then
-            # we will try to make bind for this address, if it does not
-            # work, then we will try to connect to it. We assume that
-            # RPC always gives us reliable information.
-
-            tunnel = ngrok.connect(DEFAULT_BIND_PORT, 'tcp')
-
-            tunnel_host, tunnel_port = tunnel.public_url.replace('tcp://', '').split(':')
-            tunnel_port = int(tunnel_port)
-
-            request_params = (tunnel_host, tunnel_port)
-            response = requests.post(endpoint, json=request("endpoint.set", request_params))
-            log.debug(response.json())
-
-            log.info('Public tunnel URL: %s', tunnel.public_url)
-
-            self_serialized = peer2key(*request_params)
-            self.shared_factory['connected_peers', self_serialized] = self.gimel_addr
-
-            acceptor = self.accept_connections()
-            self.scheduler.spawn(acceptor)
-        else:
-            self.is_super = False
-            _, sp = self.socket.getsockname()
-
-            di = jrpc('peer.connect',
-                      host=get_ip(), port=sp,
-                      gimel_addr=self.gimel_addr)
-
-            dumped = json.dumps(di)
-
-            send(self.socket, dumped)
-
-            super_server = self.serve_super_node(self.socket)
-            self.scheduler.spawn(super_server)
-
-            log.info('Connect as peer node.')
-
-            # noinspection PyProtectedMember
-            self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
-
-        log.debug(f'Current node addr: {self.socket.getsockname()}')
+        self.connections_dispatcher = ConnectionsDispatcher(rpc)
+        # self.is_super = True
+        #
+        # self.socket, code = connect_or_bind(self.netaddr)
+        #
+        # if code == CONNECTED_AS_BINDER:
+        #     self.socket.listen()
+        #
+        #     log.info('Connect as server node.')
+        #
+        #     # here the logic is as follows: we will ask our rpc about
+        #     # which host (super-node) is relevant at the moment, then
+        #     # we will try to make bind for this address, if it does not
+        #     # work, then we will try to connect to it. We assume that
+        #     # RPC always gives us reliable information.
+        #
+        #     tunnel = ngrok.connect(DEFAULT_BIND_PORT, 'tcp')
+        #
+        #     tunnel_host, tunnel_port = tunnel.public_url.replace('tcp://', '').split(':')
+        #     tunnel_port = int(tunnel_port)
+        #
+        #     request_params = (tunnel_host, tunnel_port)
+        #     response = requests.post(endpoint, json=request("endpoint.set", request_params))
+        #     log.debug(response.json())
+        #
+        #     log.info('Public tunnel URL: %s', tunnel.public_url)
+        #
+        #     self_serialized = peer2key(*request_params)
+        #     self.shared_factory['connected_peers', self_serialized] = self.gimel_addr
+        #
+        #     acceptor = self.accept_connections()
+        #     self.scheduler.spawn(acceptor)
+        # else:
+        #     self.is_super = False
+        #     _, sp = self.socket.getsockname()
+        #
+        #     di = jrpc('peer.connect',
+        #               host=get_ip(), port=sp,
+        #               gimel_addr=self.gimel_addr)
+        #
+        #     dumped = json.dumps(di)
+        #
+        #     send(self.socket, dumped)
+        #
+        #     super_server = self.serve_super_node(self.socket)
+        #     self.scheduler.spawn(super_server)
+        #
+        #     log.info('Connect as peer node.')
+        #
+        #     # noinspection PyProtectedMember
+        #     self.scheduler._add_readable(self.socket, self.netaddr.to_pair())
+        #
+        # log.debug(f'Current node addr: {self.socket.getsockname()}')
 
     def finalizer(self):
         if self.is_super:
@@ -232,7 +234,6 @@ class Peer:
 
             log.info(f'Connection from {address}')
             self.peer_proxy.add_socket(address[0], address[1], client_socket)
-            self.shared_factory.add_recipient(client_socket)
 
             job = self.serve_node(client_socket)
             self.scheduler.spawn(job)
@@ -244,6 +245,8 @@ class Peer:
 
         # this call changes the a2a-dict
         self.peer_proxy.add_serialized(host, port, gimel_addr)
+        cl_sock = self.peer_proxy.get_socket(host, port)
+        self.shared_factory.add_recipient(cl_sock)
         # share connected peers with other nodes
         self.shared_factory.share_one('connected_peers')
 
@@ -296,7 +299,10 @@ class Peer:
 
                 # TODO (qnbhd) make registration callbacks mechanism
                 if js['method'] == 'peer.connect':
-                    self.on_peer_connect(js['method'], **js['params'])
+                    cl_host, cl_port = client_socket.getpeername()
+                    self.on_peer_connect('peer.connect',
+                                         host=cl_host, port=cl_port,
+                                         gimel_addr=js['params']['gimel_addr'])
                     # self.on_peer_disconnect(js['method'], **js['params'])
 
             yield Scheduler.WRITE, client_socket

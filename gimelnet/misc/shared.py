@@ -48,8 +48,8 @@ class SharedObject:
     def _update(self, __m: Mapping):
         raise NotImplementedError()
 
-    def _get(self):
-        return self._inner
+    def _get(self, *keys):
+        raise NotImplementedError()
 
     def _set(self, *keys, value):
         raise NotImplementedError()
@@ -73,6 +73,9 @@ class SharedDict(SharedObject):
         return self._inner.keys()
 
     def _set(self, *keys, value):
+        if not keys:
+            return self._inner
+
         rkey = keys[-1]
 
         result = self._inner
@@ -82,7 +85,23 @@ class SharedDict(SharedObject):
 
         result[rkey] = value
 
+    def _get(self, *keys):
+        if not keys:
+            return self._inner
+
+        rkey = keys[-1]
+
+        result = self._inner
+
+        for key in keys[:-1]:
+            result = result[key]
+
+        return result[rkey]
+
     def _delete(self, *keys):
+        if not keys:
+            return self._inner
+
         rkey = keys[-1]
 
         result = self._inner
@@ -108,6 +127,9 @@ class SharedList(SharedObject):
         return str(self)
 
     def _set(self, *keys, value):
+        if not keys:
+            return self._inner
+
         rkey = keys[-1]
 
         result = self._inner
@@ -117,7 +139,23 @@ class SharedList(SharedObject):
 
         result[rkey] = value
 
+    def _get(self, *keys):
+        if not keys:
+            return self._inner
+
+        rkey = keys[-1]
+
+        result = self._inner
+
+        for key in keys[:-1]:
+            result = result[key]
+
+        return result[rkey]
+
     def _delete(self, *keys):
+        if not keys:
+            return self._inner
+
         rkey = keys[-1]
 
         result = self._inner
@@ -157,10 +195,6 @@ class SharedFactory:
         # noinspection PyProtectedMember
         self.shared_pool[identifier]._update(new_obj)
 
-    def set(self, identifier, *keys, value):
-        # noinspection PyProtectedMember
-        self.shared_pool[identifier]._set(*keys, value=value)
-
     def delete(self, identifier, *keys):
         # noinspection PyProtectedMember
         self.shared_pool[identifier]._delete(keys)
@@ -176,16 +210,19 @@ class SharedFactory:
         for identifier, new_obj in fetched_data.items():
             self.update(identifier, new_obj)
 
-    def get(self, *keys):
-        result = self.shared_pool[keys[0]]
+    def set(self, identifier, *keys, value):
+        # noinspection PyProtectedMember
+        self.shared_pool[identifier]._set(*keys, value=value)
 
-        for key in keys[1:]:
-            result = result[key]
+    def get(self, identifier, *keys):
+        # noinspection PyProtectedMember
+        return self.shared_pool[identifier]._get(*keys)
 
-        return result
-
-    def __getitem__(self, item):
-        return self.get([*item] if isinstance(item, tuple) else item)
+    def __getitem__(self, key):
+        is_tuple = isinstance(key, tuple)
+        identifier = key[0] if is_tuple else key
+        keys = key[1:] if is_tuple else []
+        self.get(identifier, *keys)
 
     def __setitem__(self, key, value):
         is_tuple = isinstance(key, tuple)
@@ -223,7 +260,7 @@ class SharedFactory:
             return
 
         # noinspection PyProtectedMember
-        di = {identifier: self.shared_pool[identifier]._get_inner()}
+        di = {identifier: self.shared_pool[identifier]._inner}
         di = jrpc('shared.share', **di)
         dumped = json.dumps(di)
 

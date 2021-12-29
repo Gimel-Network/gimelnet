@@ -13,6 +13,7 @@ _log.getLogger('pyngrok.process').propagate = False
 _log.getLogger("requests").setLevel(_log.INFO)
 _log.getLogger("urllib3").setLevel(_log.INFO)
 
+
 # noinspection PyPep8Naming
 def getLogger(name) -> _log.Logger:
     return _log.getLogger(name)

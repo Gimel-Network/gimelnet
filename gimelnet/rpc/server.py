@@ -1,3 +1,5 @@
+from itertools import chain
+
 from oslash import Either
 from sanic import Sanic
 from sanic.request import Request
@@ -14,16 +16,17 @@ app = Sanic("Gimelchain-testnet-endpoint")
 storage = JsonFileStorage()
 
 
-@method(name='endpoint.get')
-def endpoint_get() -> Result:
-    if value := storage['actual']:
-        return Success(value)
+@method(name='endpoints.get')
+def endpoints_get() -> Result:
+    if value := storage['endpoints']:
+        print(value)
+        return Success('\n'.join(value))
     return Error(code=404, message='Not found key.')
 
 
-@method(name='endpoint.set')
-def endpoint_set(host: str, port: int) -> Result:
-    storage['actual'] = f'{host}:{port}'
+@method(name='endpoints.add')
+def endpoints_add(host: str, port: int) -> Result:
+    storage['endpoints'] = list(chain(storage['endpoints'] or [], [f'{host}:{port}']))
     return Success()
 
 
