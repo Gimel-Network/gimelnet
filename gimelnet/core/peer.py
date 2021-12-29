@@ -78,15 +78,22 @@ def connect_or_bind(addr: Addr):
         return sock
 
     # firstly we try connect to addr
+    # ngrok.disconnect(addr.host)
+    response = None
+    try:
+        response = requests.get(addr.host, timeout=3)
+    except requests.exceptions.ConnectTimeout:
+        pass
 
     s = build_socket()
-    try:
-        s.settimeout(2)
-        s.connect(addr)
-        s.settimeout(None)
-        return s, CONNECTED_AS_PEER
-    except (ConnectionRefusedError, socket.timeout):
-        pass
+    if response:
+        try:
+            s.settimeout(2)
+            s.connect(addr)
+            s.settimeout(None)
+            return s, CONNECTED_AS_PEER
+        except (ConnectionRefusedError, socket.timeout):
+            pass
 
     s = build_socket()
     s.bind(('localhost', DEFAULT_BIND_PORT))
