@@ -13,6 +13,7 @@ jsonrpcclient = "^4.0.2"
 schedule = "^1.1.0"
 requests = "^2.26.0"
 pyngrok = "^5.1.0"
+selectors = "^0.0.14"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
