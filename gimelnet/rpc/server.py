@@ -31,17 +31,17 @@ def endpoints_add(host: str, port: int) -> Result:
     return Success()
 
 
-@app.route("tunnels.get", methods=["POST"])
+@method(name="tunnels.get")
 async def get_available_tunnel():
     return random.choice(storage['tunnels'])
 
 
-@app.route("tunnels.add", methods=["POST"])
+@method(name="tunnels.add")
 async def add_tunnel(host, port):
     storage['tunnels'] = list(set(chain(storage['endpoints'] or [], [f'{host}:{port}'])))
 
 
-@app.route("tunnels.del", methods=["POST"])
+@method(name="tunnels.del")
 async def del_tunnel(host, port):
     if f'{host}:{port}' in storage['tunnels']:
         storage['tunnels'].remove(f'{host}:{port}')
