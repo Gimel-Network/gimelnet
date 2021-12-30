@@ -1,3 +1,4 @@
+import random
 from itertools import chain
 
 from oslash import Either
@@ -30,6 +31,24 @@ def endpoints_add(host: str, port: int) -> Result:
     return Success()
 
 
+@app.route("tunnels.get", methods=["POST"])
+async def get_available_tunnel():
+    return random.choice(storage['tunnels'])
+
+
+@app.route("tunnels.add", methods=["POST"])
+async def add_tunnel(host, port):
+    storage['tunnels'] = list(set(chain(storage['endpoints'] or [], [f'{host}:{port}'])))
+
+
+@app.route("tunnels.del", methods=["POST"])
+async def del_tunnel(host, port):
+    if f'{host}:{port}' in storage['tunnels']:
+        storage['tunnels'].remove(f'{host}:{port}')
+        return Success()
+    return Error(message='Not in tunnels storage.')
+
+
 @app.route("/", methods=["POST"])
 async def router(request: Request):
     middle = dispatch_to_serializable(request.body)
@@ -41,4 +60,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
