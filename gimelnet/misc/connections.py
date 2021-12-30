@@ -1,3 +1,7 @@
+import os.path
+import pathlib
+import subprocess
+import sys
 from dataclasses import dataclass
 import socket
 from typing import Dict, Tuple, List
@@ -75,6 +79,30 @@ LOCALHOST = (DEFAULT_BIND_HOST, DEFAULT_BIND_PORT)
 log = logging.getLogger(__name__)
 
 
+def run_tunneling(port, master_addr: Addr):
+    project_folder = pathlib.Path(__file__).parent.parent.parent
+    slaver_path = os.path.join(project_folder, 'shootback', 'slaver.py')
+
+    proc = subprocess.Popen([
+        sys.executable, slaver_path,
+        '-m', f'{DEFAULT_BIND_HOST}:{port}',
+        '-t', f'{master_addr.host}:{master_addr.port}'
+    ])
+
+    try:
+        outs, errs = proc.communicate(timeout=4)
+        print(outs, errs)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        outs, errs = proc.communicate()
+
+    return master_addr.host, master_addr.port
+
+    # tunnel = ngrok.connect(port, 'tcp')
+    # tun_host, tun_port = tunnel.public_url.replace('tcp://', '').split(':')
+    # return tun_host, int(tun_port)
+
+
 class ConnectionsDispatcher:
 
     def __init__(self, rpc):
@@ -84,11 +112,9 @@ class ConnectionsDispatcher:
         self.listener = self._build_socket()
         self.listener.bind(LOCALHOST)
 
-        tunnel = ngrok.connect(DEFAULT_BIND_PORT, 'tcp')
-        tun_host, tun_port = tunnel.public_url.replace('tcp://', '').split(':')
-        tun_port = int(tun_port)
+        tunnel = run_tunneling(self.listener.getsockname()[1], Addr('65.21.240.183', 10000))
 
-        self.tunneled_addr = Addr(tun_host, tun_port)
+        self.tunneled_addr = Addr(*tunnel)
 
         log.info(f'Tunneled listener address: {self.tunneled_addr}')
 
@@ -162,20 +188,6 @@ class ConnectionsDispatcher:
     def update_pool(self, new_pool):
         pass
 
-
-
-
-
-
-
-
-
-
-if __name__ == '__main__':
-    my_private = ('12.24.42.23', 60)
-    rpc_p = 'https://sdfdsf.com'
-
-    connections_dispatcher = ConnectionsDispatcher(rpc_p)
 
 
 
