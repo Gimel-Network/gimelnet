@@ -13,6 +13,7 @@ from sanic.request import Request
 from sanic.response import json
 from jsonrpcserver import Success, Error, dispatch_to_serializable, method
 from jsonrpcserver.result import SuccessResult, ErrorResult
+import executor
 
 # jsonrpcserver patch for linter
 from gimelnet.rpc.storage import JsonFileStorage
@@ -53,15 +54,27 @@ def get_available_tunnel() -> Result:
         gimel_folder = dirname(dirname(dirname(abspath(__file__))))
         master_py = os.path.join(gimel_folder, 'shootback', 'master.py')
 
-        proc = subprocess.Popen([
-            sys.executable, master_py,
-            '-m', f'0.0.0.0:0',
-            '-c', f'0.0.0.0:0',
-        ], stderr=sys.stdout, stdout=sys.stderr)
+        # proc = subprocess.Popen([
+        #     sys.executable, master_py,
+        #     '-m', f'0.0.0.0:0',
+        #     '-c', f'0.0.0.0:0',
+        # ], stderr=sys.stdout, stdout=sys.stderr)
+        out = executor.execute(f'{sys.executable} {master_py} -m 0.0.0.0:0 -c 0.0.0.0:0 &')
+        print(out)
+        jobs = executor.execute(f'jobs')
+        print(jobs)
 
-        print('sleeping')
+        #
+        # try:
+        #     outs, errs = proc.communicate(timeout=10)
+        #     print(outs, errs)
+        # except subprocess.TimeoutExpired:
+        #     print('Was closed')
+        #     proc.kill()
 
-        sleep(10)
+    print('sleep')
+    sleep(5)
+    print('wakeup')
 
     tunnels = storage.get('tunnels')
     print(tunnels)
