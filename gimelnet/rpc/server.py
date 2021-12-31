@@ -54,23 +54,11 @@ def get_available_tunnel() -> Result:
         gimel_folder = dirname(dirname(dirname(abspath(__file__))))
         master_py = os.path.join(gimel_folder, 'shootback', 'master.py')
 
-        # proc = subprocess.Popen([
-        #     sys.executable, master_py,
-        #     '-m', f'0.0.0.0:0',
-        #     '-c', f'0.0.0.0:0',
-        # ], stderr=sys.stdout, stdout=sys.stderr)
-        out = executor.execute(f'{sys.executable} {master_py} -m 0.0.0.0:0 -c 0.0.0.0:0 &', capture=True)
-        print(out)
-        jobs = executor.execute(f'jobs', capture=True)
-        print(jobs)
-
-        #
-        # try:
-        #     outs, errs = proc.communicate(timeout=10)
-        #     print(outs, errs)
-        # except subprocess.TimeoutExpired:
-        #     print('Was closed')
-        #     proc.kill()
+        subprocess.Popen([
+            sys.executable, master_py,
+            '-m', f'0.0.0.0:0',
+            '-c', f'0.0.0.0:0',
+        ], stderr=sys.stdout, stdout=sys.stderr, close_fds=True)
 
         print('sleep')
         sleep(5)
