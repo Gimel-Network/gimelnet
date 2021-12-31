@@ -9,7 +9,7 @@ from time import sleep
 from typing import Dict, Tuple, List
 
 import requests
-from jsonrpcclient import request
+from jsonrpcclient import request, parse, Ok
 from pyngrok import ngrok
 
 from gimelnet.misc import logging
@@ -70,15 +70,14 @@ def get_available_tunnel(rpc) -> Addr:
 
     # TODO (qnbhd) check connection
     response = requests.post(rpc, json=request('tunnels.get'))
+    parsed = parse(response.json())
 
-    if response:
-        r = response.json()
-        result = r['result']
-        h, p = result.split(':')
+    if isinstance(parsed, Ok):
+        h, p = parsed.result.split(':')
         p = int(p)
         return Addr(h, p)
 
-    raise Exception()
+    raise Exception('No available tunnels')
 
 
 def in_network(addr):

@@ -15,7 +15,7 @@ Result = Either[ErrorResult, SuccessResult]
 
 app = Sanic("Gimelchain-testnet-endpoint")
 storage = JsonFileStorage()
-storage.set('endpoints', dict())
+storage.set('endpoints', list())
 storage.set('tunnels', list())
 
 
