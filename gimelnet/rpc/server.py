@@ -63,7 +63,7 @@ def add_tunnel(addr, slaver_port, customer_port) -> Result:
 
     slaver2public = storage.get('slaver2public')
     slaver2public[f'{addr}:{slaver_port}'] = f'{addr}:{customer_port}'
-    slaver2public.set('slaver2public', slaver2public)
+    storage.set('slaver2public', slaver2public)
     return Success()
 
 
