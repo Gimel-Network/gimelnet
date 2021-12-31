@@ -128,11 +128,17 @@ class Peer:
         # Super node - one that currently
         # acts as a coordinator in the current p2p network
         self.connections_dispatcher = ConnectionsDispatcher(rpc)
+        log.info('Spawn accept job')
+        self.scheduler.spawn(self.accept_connections())
+        log.info('After spawn accept job')
+
 
         for endpoint in self.connections_dispatcher.endpoints:
             if self.connections_dispatcher.connect(endpoint):
+                log.info(f'Try connect to {endpoint}')
                 job = self.request_job(endpoint)
                 self.scheduler.spawn(job)
+
         # self.is_super = True
         #
         # self.socket, code = connect_or_bind(self.netaddr)
@@ -196,14 +202,21 @@ class Peer:
         """
 
         while True:
+            log.warning('In acceptor')
             yield Scheduler.READ, self.connections_dispatcher.listener
-
+            log.warning('In acceptor yield')
             client_socket, address = self.connections_dispatcher.accept()
 
             log.info(f'Connection from {address}')
             # self.peer_proxy.add_socket(address[0], address[1], client_socket)
+            self.connections_dispatcher.update_pool()
+            for endpoint in self.connections_dispatcher.endpoints:
+                if self.connections_dispatcher.connect(endpoint):
+                    log.info(f'Try connect to {endpoint}')
+                    job = self.request_job(endpoint)
+                    self.scheduler.spawn(job)
 
-            job = self.response_job(client_socket)
+            job = self.response_job(address)
             self.scheduler.spawn(job)
 
     # noinspection PyMethodMayBeStatic
@@ -246,14 +259,14 @@ class Peer:
         target_socket = self.connections_dispatcher.connections_pool[target_addr]
 
         while True:
-            yield Scheduler.READ, target_socket
+            yield Scheduler.WRITE, target_socket
 
             self.connections_dispatcher.request(target_addr, 'ping')
 
             log.debug('Sleep...')
             time.sleep(5)
 
-            yield Scheduler.WRITE, target_socket
+            # yield Scheduler.READ, target_socket
 
     def run(self):
         self.scheduler.run()

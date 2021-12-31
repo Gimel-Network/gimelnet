@@ -1,5 +1,10 @@
+import os
+import pathlib
 import random
+import subprocess
+import sys
 from itertools import chain
+from time import sleep
 
 from oslash import Either
 from sanic import Sanic
@@ -41,14 +46,29 @@ def endpoints_add(host: str, port: int) -> Result:
 
 @method(name="tunnels.get")
 def get_available_tunnel() -> Result:
-    tunnels = storage.get('tunnels')
-    if len(tunnels):
-        slaver_addr = random.choice(tunnels)
+    started_new_tunnel = False
+    while tunnels := storage.get('tunnels') or started_new_tunnel:
+        if len(tunnels):
+            slaver_addr = random.choice(tunnels)
 
-        slaver2public = storage.get('slaver2public')
-        public_addr = slaver2public[slaver_addr]
-        result = dict(slaver=slaver_addr, public=public_addr)
-        return Success(result)
+            slaver2public = storage.get('slaver2public')
+            public_addr = slaver2public[slaver_addr]
+            result = dict(slaver=slaver_addr, public=public_addr)
+            return Success(result)
+        else:
+            project_folder = pathlib.Path(__file__).parent.parent.parent
+            slaver_path = os.path.join(project_folder, 'shootback', 'slaver.py')
+
+            proc = subprocess.Popen([
+                sys.executable, slaver_path,
+                '-t', f'0.0.0.0:0',
+                '-m', f'0.0.0.0:0',
+            ], stderr=sys.stdout, stdout=sys.stderr)
+
+            started_new_tunnel = True
+
+            sleep(10)
+
     return Error(code=101, message='Not available tunnels')
 
 

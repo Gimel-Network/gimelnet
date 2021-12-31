@@ -74,8 +74,10 @@ def get_available_tunnel(rpc) -> Tuple[Addr, Addr]:
 
     print(parsed)
     if isinstance(parsed, Ok):
+        result = parsed.result
+        print(result, type(result))
         slaver_h, slaver_p = parsed.result['slaver'].split(':')
-        public_h, public_p = parsed.result['customer'].split(':')
+        public_h, public_p = parsed.result['public'].split(':')
         return Addr.from_pair(slaver_h, slaver_p), Addr.from_pair(public_h, public_p)
 
     raise Exception('No available tunnels')
@@ -98,11 +100,29 @@ log = logging.getLogger(__name__)
 
 def run_tunneling(port, master_addr: Addr):
 
-    thread = threading.Thread(target=slaver.main,
-                              args=(master_addr, f'{DEFAULT_BIND_HOST}:{port}'),
-                              daemon=True)
+    # thread = threading.Thread(target=slaver.main,
+    #                           args=(master_addr, Addr.from_pair(DEFAULT_BIND_HOST, port)),
+    #                           daemon=True)
+    #
+    # thread.start()
 
-    thread.start()
+    project_folder = pathlib.Path(__file__).parent.parent.parent
+    slaver_path = os.path.join(project_folder, 'shootback', 'slaver.py')
+
+    proc = subprocess.Popen([
+        sys.executable, slaver_path,
+        '-t', f'{DEFAULT_BIND_HOST}:{port}',
+        '-m', f'{master_addr.host}:{master_addr.port}',
+    ], stderr=sys.stdout, stdout=sys.stderr)
+
+    return proc
+    # try:
+    #     outs, errs = proc.communicate(timeout=4)
+    #     print(outs, errs)
+    # except subprocess.TimeoutExpired:
+    #     log.warning('Was close tunneling')
+    #     proc.kill()
+    #     outs, errs = proc.communicate()
 
 
     # tunnel = ngrok.connect(port, 'tcp')
@@ -118,6 +138,8 @@ class ConnectionsDispatcher:
         # as server
         self.listener = self._build_socket()
         self.listener.bind(LOCALHOST)
+        self.listener.listen()
+        print(self.listener.getsockname())
 
         slaver_addr, public_addr = get_available_tunnel(rpc)
 
@@ -145,16 +167,17 @@ class ConnectionsDispatcher:
     def accept(self, timeout=None):
         listen_socket, listen_address = self.listener.accept()
 
+        print(listen_socket, listen_address)
         if not in_network(listen_address):
             # bad
             return
 
-        self.connections_pool[Addr.from_pair(listen_address)] = listen_socket
+        self.connections_pool[Addr.from_pair(*listen_address)] = listen_socket
 
         return listen_socket, listen_address
 
     def connect(self, addr: Addr, timeout=None):
-        if addr == self.tunneled_addr:
+        if addr == self.public_addr:
             return
 
         try:
@@ -195,8 +218,8 @@ class ConnectionsDispatcher:
 
         self._send(writeable_socket, response)
 
-    def update_pool(self, new_pool):
-        pass
+    def update_pool(self):
+        self.endpoints = pool_rpc(self.rpc)
 
 
 
