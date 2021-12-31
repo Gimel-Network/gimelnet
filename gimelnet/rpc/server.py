@@ -15,6 +15,8 @@ Result = Either[ErrorResult, SuccessResult]
 
 app = Sanic("Gimelchain-testnet-endpoint")
 storage = JsonFileStorage()
+storage['endpoints'] = dict()
+storage['tunnels'] = list()
 
 
 @method(name='endpoints.get')
@@ -27,22 +29,23 @@ def endpoints_get() -> Result:
 
 @method(name='endpoints.add')
 def endpoints_add(host: str, port: int) -> Result:
-    storage['endpoints'] = list(set(chain(storage['endpoints'] or [], [f'{host}:{port}'])))
+    storage['endpoints'] = list(set(chain(storage['endpoints'], [f'{host}:{port}'])))
     return Success()
 
 
 @method(name="tunnels.get")
-async def get_available_tunnel():
-    return random.choice(storage['tunnels'])
+def get_available_tunnel() -> Result:
+    return Success(random.choice(storage['tunnels']))
 
 
 @method(name="tunnels.add")
-async def add_tunnel(host, port):
-    storage['tunnels'] = list(set(chain(storage['endpoints'] or [], [f'{host}:{port}'])))
+def add_tunnel(host, port) -> Result:
+    storage['tunnels'] = list(set(chain(storage['tunnels'], [f'{host}:{port}'])))
+    return Success()
 
 
 @method(name="tunnels.del")
-async def del_tunnel(host, port):
+def del_tunnel(host, port) -> Result:
     if f'{host}:{port}' in storage['tunnels']:
         storage['tunnels'].remove(f'{host}:{port}')
         return Success()
