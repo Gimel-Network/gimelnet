@@ -65,6 +65,17 @@ def notify_rpc(rpc, addr):
     raise Exception()
 
 
+def get_available_tunnel(rpc):
+
+    # TODO (qnbhd) check connection
+    response = requests.post(rpc, json=request('tunnels.get'))
+
+    if response:
+        return response.json()
+
+    raise Exception()
+
+
 def in_network(addr):
     return True
 
@@ -104,7 +115,10 @@ class ConnectionsDispatcher:
         self.listener = self._build_socket()
         self.listener.bind(LOCALHOST)
 
-        tunnel = run_tunneling(self.listener.getsockname()[1], Addr('65.21.240.183', 10000))
+        tunnel_addr = get_available_tunnel(rpc)
+        print(tunnel_addr)
+        exit(0)
+        tunnel = run_tunneling(self.listener.getsockname()[1], Addr('65.21.240.183', 9999))
 
         self.tunneled_addr = Addr(*tunnel)
 

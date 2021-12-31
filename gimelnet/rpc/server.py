@@ -35,7 +35,9 @@ def endpoints_add(host: str, port: int) -> Result:
 
 @method(name="tunnels.get")
 def get_available_tunnel() -> Result:
-    return Success(random.choice(storage['tunnels']))
+    if len(storage['tunnels']):
+        return Success(random.choice(storage['tunnels']))
+    return Error(code=101, message='Not available tunnels')
 
 
 @method(name="tunnels.add")
@@ -63,5 +65,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
