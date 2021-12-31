@@ -49,7 +49,7 @@ def add_tunnel(host, port) -> Result:
 @method(name="tunnels.del")
 def del_tunnel(host, port) -> Result:
     if f'{host}:{port}' in storage['tunnels']:
-        storage['tunnels'].remove(f'{host}:{port}')
+        storage['tunnels'] = storage['tunnels'].remove(f'{host}:{port}')
         return Success()
     return Error(code=202, message='Not in tunnels storage.')
 
