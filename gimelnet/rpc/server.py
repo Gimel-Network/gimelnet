@@ -59,9 +59,9 @@ def get_available_tunnel() -> Result:
         #     '-m', f'0.0.0.0:0',
         #     '-c', f'0.0.0.0:0',
         # ], stderr=sys.stdout, stdout=sys.stderr)
-        out = executor.execute(f'{sys.executable} {master_py} -m 0.0.0.0:0 -c 0.0.0.0:0 &')
+        out = executor.execute(f'{sys.executable} {master_py} -m 0.0.0.0:0 -c 0.0.0.0:0 &', capture=True)
         print(out)
-        jobs = executor.execute(f'jobs')
+        jobs = executor.execute(f'jobs', capture=True)
         print(jobs)
 
         #
@@ -72,9 +72,9 @@ def get_available_tunnel() -> Result:
         #     print('Was closed')
         #     proc.kill()
 
-    print('sleep')
-    sleep(5)
-    print('wakeup')
+        print('sleep')
+        sleep(5)
+        print('wakeup')
 
     tunnels = storage.get('tunnels')
     print(tunnels)
