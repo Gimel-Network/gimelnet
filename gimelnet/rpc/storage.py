@@ -11,11 +11,11 @@ class Storage(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def __getitem__(self, item):
+    def get(self, item):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def __setitem__(self, key, value):
+    def set(self, key, value):
         raise NotImplementedError()
 
 
@@ -25,12 +25,12 @@ class TestStorage(Storage):
         super().__init__()
         self.storage = dict()
 
-    def __getitem__(self, item):
+    def get(self, item):
         value = self.storage.get(item)
         value = Success(value) if value else Error(code='404', message=f'The {item} not founded.')
         return value
 
-    def __setitem__(self, key, value):
+    def set(self, key, value):
         self.storage[key] = value
 
 
@@ -53,14 +53,30 @@ class JsonFileStorage(Storage):
             content = js_storage.read()
             return json.loads(content)
 
-    def __getitem__(self, item):
+    def get(self, item):
         data = self._load_content()
         return data.get(item, None)
 
-    def __setitem__(self, key, value):
+    def set(self, key, value):
         data = self._load_content()
 
         data[key] = value
 
         with open(self.filename, 'w') as js_storage:
             js_storage.write(json.dumps(data, indent=2))
+
+    def remove(self, *keys):
+        if not keys:
+            return
+
+        rkey = keys[-1]
+
+        result = self._load_content()
+
+        for key in keys[:-1]:
+            result = result[key]
+
+        del result[rkey]
+
+        with open(self.filename, 'w') as js_storage:
+            js_storage.write(json.dumps(result, indent=2))

@@ -15,13 +15,13 @@ Result = Either[ErrorResult, SuccessResult]
 
 app = Sanic("Gimelchain-testnet-endpoint")
 storage = JsonFileStorage()
-storage['endpoints'] = dict()
-storage['tunnels'] = list()
+storage.set('endpoints', dict())
+storage.set('tunnels', list())
 
 
 @method(name='endpoints.get')
 def endpoints_get() -> Result:
-    if value := storage['endpoints']:
+    if value := storage.get('endpoints'):
         print(value)
         return Success('\n'.join(value))
     return Error(code=404, message='Not found key.')
@@ -29,29 +29,43 @@ def endpoints_get() -> Result:
 
 @method(name='endpoints.add')
 def endpoints_add(host: str, port: int) -> Result:
-    storage['endpoints'] = list(set(chain(storage['endpoints'], [f'{host}:{port}'])))
+    endpoints = storage.get('endpoints')
+    endpoints.append(f'{host}:{port}')
+    endpoints = set(endpoints)
+    endpoints = list(endpoints)
+
+    storage.set('endpoints', endpoints)
     return Success()
 
 
 @method(name="tunnels.get")
 def get_available_tunnel() -> Result:
-    if len(storage['tunnels']):
-        return Success(random.choice(storage['tunnels']))
+    if len(storage.get('tunnels')):
+        return Success(random.choice(storage.get('tunnels')))
     return Error(code=101, message='Not available tunnels')
 
 
 @method(name="tunnels.add")
 def add_tunnel(host, port) -> Result:
-    storage['tunnels'] = list(set(chain(storage['tunnels'], [f'{host}:{port}'])))
+    tunnels = storage.get('tunnels')
+    tunnels.append(f'{host}:{port}')
+    tunnels = set(tunnels)
+    tunnels = list(tunnels)
+
+    storage.set('tunnels', tunnels)
     return Success()
 
 
 @method(name="tunnels.del")
 def del_tunnel(host, port) -> Result:
-    if f'{host}:{port}' in storage['tunnels']:
-        storage['tunnels'] = storage['tunnels'].remove(f'{host}:{port}')
-        return Success()
-    return Error(code=202, message='Not in tunnels storage.')
+    tunnels = storage.get('tunnels')
+
+    addr = f'{host}:{port}'
+    if addr in tunnels:
+        tunnels.remove(addr)
+        storage.set('tunnels', tunnels)
+
+    return Success()
 
 
 @app.route("/", methods=["POST"])
