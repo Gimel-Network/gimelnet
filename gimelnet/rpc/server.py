@@ -4,6 +4,7 @@ import random
 import subprocess
 import sys
 from itertools import chain
+from os.path import dirname, abspath
 from time import sleep
 
 from oslash import Either
@@ -47,27 +48,30 @@ def endpoints_add(host: str, port: int) -> Result:
 @method(name="tunnels.get")
 def get_available_tunnel() -> Result:
     started_new_tunnel = False
-    while tunnels := storage.get('tunnels') or started_new_tunnel:
-        if len(tunnels):
-            slaver_addr = random.choice(tunnels)
+    tunnels = storage.get('tunnels')
+    if not tunnels:
+        gimel_folder = dirname(dirname(dirname(abspath(__file__))))
+        master_py = os.path.join(gimel_folder, 'shootback', 'master.py')
 
-            slaver2public = storage.get('slaver2public')
-            public_addr = slaver2public[slaver_addr]
-            result = dict(slaver=slaver_addr, public=public_addr)
-            return Success(result)
-        else:
-            project_folder = pathlib.Path(__file__).parent.parent.parent
-            slaver_path = os.path.join(project_folder, 'shootback', 'master.py')
+        proc = subprocess.Popen([
+            sys.executable, master_py,
+            '-m', f'0.0.0.0:0',
+            '-c', f'0.0.0.0:0',
+        ], stderr=sys.stdout, stdout=sys.stderr)
 
-            proc = subprocess.Popen([
-                sys.executable, slaver_path,
-                '-m', f'0.0.0.0:0',
-                '-c', f'0.0.0.0:0',
-            ], stderr=sys.stdout, stdout=sys.stderr)
+        print('sleeping')
 
-            started_new_tunnel = True
+        sleep(10)
 
-            sleep(10)
+    tunnels = storage.get('tunnels')
+    print(tunnels)
+    if tunnels:
+        slaver_addr = random.choice(tunnels)
+
+        slaver2public = storage.get('slaver2public')
+        public_addr = slaver2public[slaver_addr]
+        result = dict(slaver=slaver_addr, public=public_addr)
+        return Success(result)
 
     return Error(code=101, message='Not available tunnels')
 
