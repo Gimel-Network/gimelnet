@@ -47,8 +47,8 @@ def get_available_tunnel() -> Result:
 
         slaver2public = storage.get('slaver2public')
         public_addr = slaver2public[slaver_addr]
-
-        return Success(slaver=slaver_addr, public=public_addr)
+        result = dict(slaver=slaver_addr, public=public_addr)
+        return Success(result)
     return Error(code=101, message='Not available tunnels')
 
 
