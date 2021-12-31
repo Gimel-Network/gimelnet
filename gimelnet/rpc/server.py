@@ -49,7 +49,7 @@ def del_tunnel(host, port) -> Result:
     if f'{host}:{port}' in storage['tunnels']:
         storage['tunnels'].remove(f'{host}:{port}')
         return Success()
-    return Error(message='Not in tunnels storage.')
+    return Error(code=202, message='Not in tunnels storage.')
 
 
 @app.route("/", methods=["POST"])
