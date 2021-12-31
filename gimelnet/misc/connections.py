@@ -5,6 +5,7 @@ import sys
 import threading
 from dataclasses import dataclass
 import socket
+from time import sleep
 from typing import Dict, Tuple, List
 
 import requests
@@ -116,8 +117,9 @@ class ConnectionsDispatcher:
         self.listener.bind(LOCALHOST)
 
         tunnel_addr = get_available_tunnel(rpc)
-        print(tunnel_addr)
-        exit(0)
+        host, port = tunnel_addr.split(':')
+        port = int(port)
+
         tunnel = run_tunneling(self.listener.getsockname()[1], Addr('65.21.240.183', 9999))
 
         self.tunneled_addr = Addr(*tunnel)
