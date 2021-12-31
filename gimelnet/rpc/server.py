@@ -17,6 +17,7 @@ app = Sanic("Gimelchain-testnet-endpoint")
 storage = JsonFileStorage()
 storage.set('endpoints', list())
 storage.set('tunnels', list())
+storage.set('slaver2public', dict())
 
 
 @method(name='endpoints.get')
@@ -40,19 +41,29 @@ def endpoints_add(host: str, port: int) -> Result:
 
 @method(name="tunnels.get")
 def get_available_tunnel() -> Result:
-    if len(storage.get('tunnels')):
-        return Success(random.choice(storage.get('tunnels')))
+    tunnels = storage.get('tunnels')
+    if len(tunnels):
+        slaver_addr = random.choice(tunnels)
+
+        slaver2public = storage.get('slaver2public')
+        public_addr = slaver2public[slaver_addr]
+
+        return Success(slaver=slaver_addr, public=public_addr)
     return Error(code=101, message='Not available tunnels')
 
 
 @method(name="tunnels.add")
-def add_tunnel(host, port) -> Result:
+def add_tunnel(addr, slaver_port, customer_port) -> Result:
     tunnels = storage.get('tunnels')
-    tunnels.append(f'{host}:{port}')
+    tunnels.append(f'{addr}:{slaver_port}')
     tunnels = set(tunnels)
     tunnels = list(tunnels)
 
     storage.set('tunnels', tunnels)
+
+    slaver2public = storage.get('slaver2public')
+    slaver2public[f'{addr}:{slaver_port}'] = f'{addr}:{customer_port}'
+    slaver2public.set('slaver2public', slaver2public)
     return Success()
 
 
@@ -64,6 +75,10 @@ def del_tunnel(host, port) -> Result:
     if addr in tunnels:
         tunnels.remove(addr)
         storage.set('tunnels', tunnels)
+
+        slaver2public = storage.get('slaver2public')
+        del slaver2public[f'{host}:{port}']
+        storage.set('slaver2public', slaver2public)
 
     return Success()
 

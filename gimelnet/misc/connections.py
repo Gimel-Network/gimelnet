@@ -66,16 +66,16 @@ def notify_rpc(rpc, addr):
     raise Exception()
 
 
-def get_available_tunnel(rpc) -> Addr:
+def get_available_tunnel(rpc) -> Tuple[Addr, Addr]:
 
     # TODO (qnbhd) check connection
     response = requests.post(rpc, json=request('tunnels.get'))
     parsed = parse(response.json())
 
     if isinstance(parsed, Ok):
-        h, p = parsed.result.split(':')
-        p = int(p)
-        return Addr(h, p)
+        slaver_h, slaver_p = parsed.result['slaver'].split(':')
+        public_h, public_p = parsed.result['customer'].split(':')
+        return Addr.from_pair(slaver_h, slaver_p), Addr.from_pair(public_h, public_p)
 
     raise Exception('No available tunnels')
 
@@ -103,7 +103,6 @@ def run_tunneling(port, master_addr: Addr):
 
     thread.start()
 
-    return master_addr.host, master_addr.port
 
     # tunnel = ngrok.connect(port, 'tcp')
     # tun_host, tun_port = tunnel.public_url.replace('tcp://', '').split(':')
@@ -119,15 +118,16 @@ class ConnectionsDispatcher:
         self.listener = self._build_socket()
         self.listener.bind(LOCALHOST)
 
-        tunnel_addr = get_available_tunnel(rpc)
+        slaver_addr, public_addr = get_available_tunnel(rpc)
 
-        tunnel = run_tunneling(self.listener.getsockname()[1], tunnel_addr)
+        run_tunneling(self.listener.getsockname()[1], slaver_addr)
 
-        self.tunneled_addr = Addr(*tunnel)
+        self.tunneled_addr = slaver_addr
+        self.public_addr = public_addr
 
-        log.info(f'Tunneled listener address: {self.tunneled_addr}')
-
-        notify_rpc(rpc, self.tunneled_addr)
+        log.info(f'Tunneled slaver address: {self.tunneled_addr}')
+        log.info(f'Public customer addr: {self.public_addr}')
+        notify_rpc(rpc, self.public_addr)
 
         self.endpoints = pool_rpc(rpc)
 
