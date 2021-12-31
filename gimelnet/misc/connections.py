@@ -2,6 +2,7 @@ import os.path
 import pathlib
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 import socket
 from typing import Dict, Tuple, List
@@ -12,7 +13,7 @@ from pyngrok import ngrok
 
 from gimelnet.misc import logging
 from gimelnet.misc.utils import Addr, recv_timeout, get_ip
-
+from shootback import slaver
 
 # class Connection(dataclass):
 #
@@ -80,21 +81,12 @@ log = logging.getLogger(__name__)
 
 
 def run_tunneling(port, master_addr: Addr):
-    project_folder = pathlib.Path(__file__).parent.parent.parent
-    slaver_path = os.path.join(project_folder, 'shootback', 'slaver.py')
 
-    proc = subprocess.Popen([
-        sys.executable, slaver_path,
-        '-m', f'{DEFAULT_BIND_HOST}:{port}',
-        '-t', f'{master_addr.host}:{master_addr.port}'
-    ])
+    thread = threading.Thread(target=slaver.main,
+                              args=(master_addr, f'{DEFAULT_BIND_HOST}:{port}'),
+                              daemon=True)
 
-    try:
-        outs, errs = proc.communicate(timeout=4)
-        print(outs, errs)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        outs, errs = proc.communicate()
+    thread.start()
 
     return master_addr.host, master_addr.port
 
@@ -112,7 +104,7 @@ class ConnectionsDispatcher:
         self.listener = self._build_socket()
         self.listener.bind(LOCALHOST)
 
-        tunnel = run_tunneling(self.listener.getsockname()[1], Addr('65.21.240.183', 10000))
+        tunnel = run_tunneling(self.listener.getsockname()[1], Addr('65.21.240.183', 9999))
 
         self.tunneled_addr = Addr(*tunnel)
 
