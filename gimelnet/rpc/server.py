@@ -57,12 +57,12 @@ def get_available_tunnel() -> Result:
             return Success(result)
         else:
             project_folder = pathlib.Path(__file__).parent.parent.parent
-            slaver_path = os.path.join(project_folder, 'shootback', 'slaver.py')
+            slaver_path = os.path.join(project_folder, 'shootback', 'master.py')
 
             proc = subprocess.Popen([
                 sys.executable, slaver_path,
-                '-t', f'0.0.0.0:0',
                 '-m', f'0.0.0.0:0',
+                '-c', f'0.0.0.0:0',
             ], stderr=sys.stdout, stdout=sys.stderr)
 
             started_new_tunnel = True
