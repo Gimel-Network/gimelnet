@@ -1,3 +1,4 @@
+import datetime
 import os
 import pathlib
 import random
@@ -13,7 +14,7 @@ from sanic.request import Request
 from sanic.response import json
 from jsonrpcserver import Success, Error, dispatch_to_serializable, method
 from jsonrpcserver.result import SuccessResult, ErrorResult
-import executor
+from pathlib import Path
 
 # jsonrpcserver patch for linter
 from gimelnet.rpc.storage import JsonFileStorage
@@ -54,25 +55,35 @@ def get_available_tunnel() -> Result:
         gimel_folder = dirname(dirname(dirname(abspath(__file__))))
         master_py = os.path.join(gimel_folder, 'shootback', 'master.py')
 
-        subprocess.Popen([
-            sys.executable, master_py,
-            '-m', f'0.0.0.0:0',
-            '-c', f'0.0.0.0:0',
-        ], stderr=sys.stdout, stdout=sys.stderr, close_fds=True)
+        Path('logs').mkdir(exist_ok=True)
 
-        print('sleep')
-        sleep(5)
-        print('wakeup')
+        logs_folder = Path('logs')
+        log_filename = f"rpc-tunnel-run-{datetime.datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}"
 
-    tunnels = storage.get('tunnels')
-    print(tunnels)
-    if tunnels:
-        slaver_addr = random.choice(tunnels)
+        out_file = f"{log_filename}-out.log"
+        err_file = f"{log_filename}-errors.log"
+        with open(out_file, "wb", encoding='utf-8') as out, \
+             open(err_file, "wb", encoding='utf-8') as err:
 
-        slaver2public = storage.get('slaver2public')
-        public_addr = slaver2public[slaver_addr]
-        result = dict(slaver=slaver_addr, public=public_addr)
-        return Success(result)
+            subprocess.Popen([
+                sys.executable, master_py,
+                '-m', f'0.0.0.0:0',
+                '-c', f'0.0.0.0:0',
+            ], stderr=err, stdout=out, close_fds=True)
+
+    iterations = 0
+    while (iterations != 10) and (tunnels := storage.get('tunnels')):
+
+        if tunnels:
+            slaver_addr = random.choice(tunnels)
+
+            slaver2public = storage.get('slaver2public')
+            public_addr = slaver2public[slaver_addr]
+            result = dict(slaver=slaver_addr, public=public_addr)
+            return Success(result)
+
+        iterations += 1
+        sleep(0.1)
 
     return Error(code=101, message='Not available tunnels')
 

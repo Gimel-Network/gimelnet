@@ -72,7 +72,6 @@ def get_available_tunnel(rpc) -> Tuple[Addr, Addr]:
     response = requests.post(rpc, json=request('tunnels.get'))
     parsed = parse(response.json())
 
-    print(parsed)
     if isinstance(parsed, Ok):
         result = parsed.result
         print(result, type(result))
