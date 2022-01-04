@@ -69,15 +69,18 @@ def notify_rpc(rpc, addr):
 def get_available_tunnel(rpc) -> Tuple[Addr, Addr]:
 
     # TODO (qnbhd) check connection
-    response = requests.post(rpc, json=request('tunnels.get'))
-    parsed = parse(response.json())
+    iterations = 5
 
-    if isinstance(parsed, Ok):
-        result = parsed.result
-        print(result, type(result))
-        slaver_h, slaver_p = parsed.result['slaver'].split(':')
-        public_h, public_p = parsed.result['public'].split(':')
-        return Addr.from_pair(slaver_h, slaver_p), Addr.from_pair(public_h, public_p)
+    for i in range(iterations):
+        response = requests.post(rpc, json=request('tunnels.get'))
+        parsed = parse(response.json())
+
+        if isinstance(parsed, Ok):
+            result = parsed.result
+            print(result, type(result))
+            slaver_h, slaver_p = parsed.result['slaver'].split(':')
+            public_h, public_p = parsed.result['public'].split(':')
+            return Addr.from_pair(slaver_h, slaver_p), Addr.from_pair(public_h, public_p)
 
     raise Exception('No available tunnels')
 

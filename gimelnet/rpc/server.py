@@ -49,7 +49,6 @@ def endpoints_add(host: str, port: int) -> Result:
 
 @method(name="tunnels.get")
 def get_available_tunnel() -> Result:
-    started_new_tunnel = False
     tunnels = storage.get('tunnels')
     if not tunnels:
         gimel_folder = dirname(dirname(dirname(abspath(__file__))))
@@ -72,7 +71,9 @@ def get_available_tunnel() -> Result:
             ], stderr=err, stdout=out, close_fds=True)
 
     iterations = 0
-    while (iterations != 10) and not (tunnels := storage.get('tunnels')):
+    while iterations != 20:
+
+        tunnels = storage.get('tunnels')
 
         if tunnels:
             slaver_addr = random.choice(tunnels)
