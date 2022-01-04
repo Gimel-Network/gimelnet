@@ -58,12 +58,12 @@ def get_available_tunnel() -> Result:
         Path('logs').mkdir(exist_ok=True)
 
         logs_folder = Path('logs')
-        log_filename = f"rpc-tunnel-run-{datetime.datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}"
+        log_filename = f"rpc-tunnel-{datetime.datetime.now().strftime('%m-%d-%Y-%h-%m-%s')}"
 
-        out_file = f"{log_filename}-out.log"
-        err_file = f"{log_filename}-errors.log"
-        with open(out_file, "wb", encoding='utf-8') as out, \
-             open(err_file, "wb", encoding='utf-8') as err:
+        out_file = os.path.join(logs_folder, f"{log_filename}-out.log")
+        err_file = os.path.join(logs_folder, f"{log_filename}-errors.log")
+        with open(out_file, "w", encoding='utf-8') as out, \
+             open(err_file, "w", encoding='utf-8') as err:
 
             subprocess.Popen([
                 sys.executable, master_py,
@@ -72,7 +72,7 @@ def get_available_tunnel() -> Result:
             ], stderr=err, stdout=out, close_fds=True)
 
     iterations = 0
-    while (iterations != 10) and (tunnels := storage.get('tunnels')):
+    while (iterations != 10) and not (tunnels := storage.get('tunnels')):
 
         if tunnels:
             slaver_addr = random.choice(tunnels)
