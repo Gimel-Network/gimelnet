@@ -104,3 +104,4 @@ modules.xml
 /gimelnet/_storage.txt
 /gimelnet/rpc/_storage.txt
 /gimelnet/core/logs/
+.DS_Store
