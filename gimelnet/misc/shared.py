@@ -30,7 +30,6 @@ class SharedObject:
         cls_obj_type = cls.__dict__.get("__obj_type__")
 
         assert cls_obj_type is not None
-        
         __obj = __obj or cls_obj_type()
 
         assert isinstance(__obj, cls_obj_type), \
@@ -176,7 +175,7 @@ class SharedFactory:
         self.recipients: List[socket] = list()
 
     def push(self, identifier: str, sh: T):
-        if type(sh) not in _Available:
+        if not isinstance(sh, _Available):
             raise SharedObjectNotAvailableType(f'Expected {_Available}, received {type(sh)}')
 
         if identifier not in self.shared_pool:
