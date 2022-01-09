@@ -103,3 +103,4 @@ modules.xml
 /gimelnet/rpc/.storage.txt
 /gimelnet/_storage.txt
 /gimelnet/rpc/_storage.txt
+/gimelnet/core/logs/
