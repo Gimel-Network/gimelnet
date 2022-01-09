@@ -1,10 +1,8 @@
 import datetime
 import os
-import pathlib
 import random
 import subprocess
 import sys
-from itertools import chain
 from os.path import dirname, abspath
 from time import sleep
 
@@ -66,8 +64,8 @@ def get_available_tunnel() -> Result:
 
             subprocess.Popen([
                 sys.executable, master_py,
-                '-m', f'0.0.0.0:0',
-                '-c', f'0.0.0.0:0',
+                '-m', '0.0.0.0:0',
+                '-c', '0.0.0.0:0',
             ], stderr=err, stdout=out, close_fds=True)
 
     iterations = 0

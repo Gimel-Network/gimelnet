@@ -53,12 +53,11 @@ def get_available_tunnel(rpc) -> Tuple[Addr, Addr]:
     # TODO (qnbhd) check connection
     iterations = 5
 
-    for i in range(iterations):
+    for _ in range(iterations):
         response = requests.post(rpc, json=request('tunnels.get'))
         parsed = parse(response.json())
 
         if isinstance(parsed, Ok):
-            result = parsed.result
             slaver_h, slaver_p = parsed.result['slaver'].split(':')
             public_h, public_p = parsed.result['public'].split(':')
             return Addr.from_pair(slaver_h, slaver_p), Addr.from_pair(public_h, public_p)
@@ -78,7 +77,6 @@ DEFAULT_BIND_HOST = '127.0.0.1'
 DEFAULT_BIND_PORT = 0
 
 LOCALHOST = (DEFAULT_BIND_HOST, DEFAULT_BIND_PORT)
-HOME = ('0.0.0.0', 0)
 
 log = logging.getLogger(__name__)
 
@@ -218,34 +216,6 @@ class ConnectionsDispatcher:
         except ConnectionRefusedError:
             log.warning(f'Connection with {addr} was refused.')
             return False
-
-    # noinspection PyMethodMayBeStatic
-    def _recv(self, sock: Connection) -> str:
-        return sock.read()
-
-    # noinspection PyMethodMayBeStatic
-    def _send(self, sock: Connection, msg: str):
-        return sock.send(msg)
-
-    def receive(self, readable: Addr) -> str:
-
-        readable_socket = self.connections_pool.get(readable, None)
-
-        if not readable_socket:
-            raise Exception()
-
-        received = self._recv(readable_socket)
-
-        return received
-
-    def request(self, writeable: Addr, response):
-
-        writeable_socket = self.connections_pool.get(writeable)
-
-        if not writeable_socket:
-            raise Exception()
-
-        self._send(writeable_socket, response)
 
     def update_pool(self):
         self.endpoints = pool_rpc(self.rpc)

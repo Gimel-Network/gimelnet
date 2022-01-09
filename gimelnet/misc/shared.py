@@ -1,4 +1,3 @@
-import abc
 import json
 from contextlib import suppress
 from socket import socket
@@ -21,7 +20,7 @@ class SharedObjectNotAvailableType(Exception):
 
 class SharedObject:
 
-    __obj_type__ = None
+    __obj_type__ = type(None)
 
     def init(self, __obj=None, **kwargs):
         # noinspection PyAttributeOutsideInit
@@ -30,9 +29,9 @@ class SharedObject:
     def __new__(cls, __obj=None, **kwargs):
         cls_obj_type = cls.__dict__.get("__obj_type__")
 
-        __obj = __obj or cls_obj_type()
-
         assert cls_obj_type is not None
+        
+        __obj = __obj or cls_obj_type()
 
         assert isinstance(__obj, cls_obj_type), \
             f'Expected {cls.__obj_type__}, received {__obj}'

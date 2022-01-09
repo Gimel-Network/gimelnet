@@ -1,4 +1,5 @@
-from peer import Addr, Peer
+from peer import Peer
+import click
 
 
 def gen_hash_from_words(words):
@@ -13,9 +14,20 @@ def gen_hash_from_words(words):
     return str(hash_object.hexdigest())
 
 
-if __name__ == '__main__':
-    endpoint = "http://65.21.240.183:5000"
+@click.group()
+def cli():
+    pass
 
+
+@click.command(name='run')
+@click.option('--rpc', required=True, help='RPC address')
+def run(rpc):
     uuid = gen_hash_from_words(['test', 'gimel', 'net'])
-    peer = Peer(uuid, endpoint)
+    peer = Peer(uuid, rpc)
     peer.run()
+
+
+cli.add_command(run)
+
+if __name__ == '__main__':
+    cli()

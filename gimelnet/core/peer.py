@@ -48,7 +48,7 @@ class Peer:
 
         while True:
             yield Scheduler.READ, self.connections_dispatcher.listener
-            client_socket, address = self.connections_dispatcher.accept()
+            _, address = self.connections_dispatcher.accept()
 
             log.info(f'Connection from {address}')
             # self.peer_proxy.add_socket(address[0], address[1], client_socket
@@ -65,21 +65,21 @@ class Peer:
         :return:
         """
 
-        target_socket = self.connections_dispatcher.connections_pool[target_addr]
+        connection = self.connections_dispatcher.connections_pool[target_addr]
 
         while True:
             # return the control flow to the main loop
-            yield Scheduler.READ, target_socket
+            yield Scheduler.READ, connection
 
             # followed by a blocking call-reading of data by timeout
-            response = target_socket.read()
+            response = connection.read()
 
-            log.info(f'Receive message from {target_socket}: ')
+            log.info(f'Receive message from {connection}: ')
             log.info(response)
 
             # socket connection broken sign
             if not response:
-                target_socket.close()
+                connection.close()
                 return
 
     def request_job(self, target_addr: Addr):
