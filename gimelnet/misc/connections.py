@@ -1,34 +1,16 @@
+import datetime
 import os.path
 import pathlib
 import subprocess
 import sys
-import threading
-from dataclasses import dataclass
 import socket
-from time import sleep
 from typing import Dict, Tuple, List
 
 import requests
 from jsonrpcclient import request, parse, Ok
-from pyngrok import ngrok
 
 from gimelnet.misc import logging
-from gimelnet.misc.utils import Addr, recv_timeout, get_ip
-from shootback import slaver
-
-# class Connection(dataclass):
-#
-#     lpub: Addr
-#     lpriv: Addr
-#     rpub: Addr
-#     rpriv: Addr
-#     socket_instance: socket
-#
-#     def speak(self, msg):
-#         pass
-#
-#     def send(self, timeout=None):
-#         pass
+from gimelnet.misc.utils import Addr
 
 
 # return graph
@@ -77,7 +59,6 @@ def get_available_tunnel(rpc) -> Tuple[Addr, Addr]:
 
         if isinstance(parsed, Ok):
             result = parsed.result
-            print(result, type(result))
             slaver_h, slaver_p = parsed.result['slaver'].split(':')
             public_h, public_p = parsed.result['public'].split(':')
             return Addr.from_pair(slaver_h, slaver_p), Addr.from_pair(public_h, public_p)
@@ -95,41 +76,95 @@ def pack_message(msg) -> bytes:
 
 DEFAULT_BIND_HOST = '127.0.0.1'
 DEFAULT_BIND_PORT = 0
+
 LOCALHOST = (DEFAULT_BIND_HOST, DEFAULT_BIND_PORT)
+HOME = ('0.0.0.0', 0)
 
 log = logging.getLogger(__name__)
 
 
 def run_tunneling(port, master_addr: Addr):
-
-    # thread = threading.Thread(target=slaver.main,
-    #                           args=(master_addr, Addr.from_pair(DEFAULT_BIND_HOST, port)),
-    #                           daemon=True)
-    #
-    # thread.start()
-
     project_folder = pathlib.Path(__file__).parent.parent.parent
     slaver_path = os.path.join(project_folder, 'shootback', 'slaver.py')
 
-    proc = subprocess.Popen([
-        sys.executable, slaver_path,
-        '-t', f'{DEFAULT_BIND_HOST}:{port}',
-        '-m', f'{master_addr.host}:{master_addr.port}',
-    ], stderr=sys.stdout, stdout=sys.stderr)
+    logs_folder = pathlib.Path('logs')
+    logs_folder.mkdir(exist_ok=True)
+    log_filename = f"node-run-{datetime.datetime.now().strftime('%m-%d-%Y-%h-%m-%s')}"
+
+    out_file = os.path.join(logs_folder, f"{log_filename}-out.log")
+    err_file = os.path.join(logs_folder, f"{log_filename}-errors.log")
+
+    with open(out_file, "w", encoding='utf-8') as out, \
+            open(err_file, "w", encoding='utf-8') as err:
+
+        proc = subprocess.Popen([
+            sys.executable, slaver_path,
+            '-t', f'{DEFAULT_BIND_HOST}:{port}',
+            '-m', f'{master_addr.host}:{master_addr.port}',
+        ], stderr=err, stdout=out)
 
     return proc
-    # try:
-    #     outs, errs = proc.communicate(timeout=4)
-    #     print(outs, errs)
-    # except subprocess.TimeoutExpired:
-    #     log.warning('Was close tunneling')
-    #     proc.kill()
-    #     outs, errs = proc.communicate()
 
 
-    # tunnel = ngrok.connect(port, 'tcp')
-    # tun_host, tun_port = tunnel.public_url.replace('tcp://', '').split(':')
-    # return tun_host, int(tun_port)
+class Connection:
+
+    def __init__(self, sock=None):
+        self.sock: socket.socket = sock or self._build_socket()
+        self.listen_des = self.sock.makefile('r')
+        self.write_des = self.sock.makefile('w')
+
+    def accept(self):
+        conn, addr = self.sock.accept()
+        return Connection(conn), addr
+
+    def connect(self, addr):
+        self.sock.connect(addr)
+
+    def send(self, msg: str):
+        self.write_des.write(f'{msg}\n')
+        self.write_des.flush()
+
+    def read(self):
+        return self.listen_des.readline().strip()
+
+    def bind(self, addr):
+        self.sock.bind(addr)
+
+    def listen(self):
+        self.sock.listen()
+
+    def getsockname(self):
+        return self.sock.getsockname()
+
+    def getpeername(self):
+        return self.sock.getpeername()
+
+    def fileno(self):
+        return self.sock.fileno()
+
+    @staticmethod
+    def _build_socket() -> socket:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return sock
+
+    def close(self):
+        self.listen_des.close()
+        self.write_des.close()
+        self.sock.close()
+
+    def __repr__(self):
+        raddr = None
+        try:
+            raddr = self.getpeername()
+        except Exception as e:
+            print(type(e), e)
+
+        raddr = '' if raddr is None else f', raddr={raddr}'
+        return f'Connection(laddr={self.sock.getsockname()}{raddr})'
+
+    def __str__(self):
+        return repr(self)
 
 
 class ConnectionsDispatcher:
@@ -138,10 +173,9 @@ class ConnectionsDispatcher:
         self.rpc = rpc
 
         # as server
-        self.listener = self._build_socket()
+        self.listener = Connection()
         self.listener.bind(LOCALHOST)
         self.listener.listen()
-        print(self.listener.getsockname())
 
         slaver_addr, public_addr = get_available_tunnel(rpc)
 
@@ -150,26 +184,17 @@ class ConnectionsDispatcher:
         self.tunneled_addr = slaver_addr
         self.public_addr = public_addr
 
-        log.info(f'Tunneled slaver address: {self.tunneled_addr}')
+        # log.info(f'Tunneled slaver address: {self.tunneled_addr}')
         log.info(f'Public customer addr: {self.public_addr}')
         notify_rpc(rpc, self.public_addr)
 
         self.endpoints = pool_rpc(rpc)
 
-        print(self.endpoints)
-
-        self.connections_pool: Dict[Addr, socket.socket] = dict()
-
-    @staticmethod
-    def _build_socket():
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return sock
+        self.connections_pool: Dict[Addr, Connection] = dict()
 
     def accept(self, timeout=None):
         listen_socket, listen_address = self.listener.accept()
 
-        print(listen_socket, listen_address)
         if not in_network(listen_address):
             # bad
             return
@@ -181,9 +206,11 @@ class ConnectionsDispatcher:
     def connect(self, addr: Addr, timeout=None):
         if addr == self.public_addr:
             return
+        if addr in self.connections_pool:
+            return
 
         try:
-            resp_socket = self._build_socket()
+            resp_socket = Connection()
             resp_socket.connect(addr)
             self.connections_pool[addr] = resp_socket
             log.info(f'Connection with {addr} was completed.')
@@ -193,12 +220,12 @@ class ConnectionsDispatcher:
             return False
 
     # noinspection PyMethodMayBeStatic
-    def _recv(self, sock: socket.socket) -> str:
-        return recv_timeout(sock)
+    def _recv(self, sock: Connection) -> str:
+        return sock.read()
 
     # noinspection PyMethodMayBeStatic
-    def _send(self, sock: socket.socket, msg: str):
-        return sock.sendall(msg.encode('utf-8'))
+    def _send(self, sock: Connection, msg: str):
+        return sock.send(msg)
 
     def receive(self, readable: Addr) -> str:
 

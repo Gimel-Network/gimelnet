@@ -1,0 +1,7 @@
+[INFO 2022-01-09 14:27:33,013] shootback 2.6.1-r19 slaver running
+[INFO 2022-01-09 14:27:33,013] author: Aploium <i@z.codes>  site: https://github.com/aploium/shootback
+[INFO 2022-01-09 14:27:33,013] Master: 65.21.240.183:33267
+[INFO 2022-01-09 14:27:33,013] Target: 127.0.0.1:51563
+[INFO 2022-01-09 14:27:33,013] running as slaver, master addr: 65.21.240.183:33267 target: 127.0.0.1:51563
+[INFO 2022-01-09 14:27:33,013] SocketBridge daemon started
+[INFO 2022-01-09 14:27:33,089] connected to master[65.21.240.183:33267] at 192.168.0.23:51571 total: 1
