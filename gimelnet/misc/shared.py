@@ -4,6 +4,7 @@ from socket import socket
 from typing import TypeVar, List, Dict, Mapping
 
 from gimelnet.misc import logging
+from gimelnet.misc.connections import Connection
 from gimelnet.misc.utils import send, jrpc
 
 
@@ -172,7 +173,7 @@ class SharedFactory:
 
     def __init__(self):
         self.shared_pool: Dict[str, T] = dict()
-        self.recipients: List[socket] = list()
+        self.recipients: List[Connection] = list()
 
     def push(self, identifier: str, sh: T):
         if not isinstance(sh, _Available):
@@ -197,11 +198,11 @@ class SharedFactory:
         # noinspection PyProtectedMember
         self.shared_pool[identifier]._delete(keys)
 
-    def add_recipient(self, recipient_socket: socket):
-        self.recipients.append(recipient_socket)
+    def add_recipient(self, recipient: Connection):
+        self.recipients.append(recipient)
 
-    def remove_recipient(self, recipient_socket: socket):
-        self.recipients.remove(recipient_socket)
+    def remove_recipient(self, recipient: Connection):
+        self.recipients.remove(recipient)
 
     def loads(self, fetched_data: dict):
         log.debug(f'Fetch data {json.dumps(fetched_data, indent=4)}')
@@ -248,8 +249,8 @@ class SharedFactory:
 
             for recipient in self.recipients:
                 with suppress(OSError):
-                    send(recipient, dumped)
-                log.debug(f'Share objects from factory with with {recipient}')
+                    recipient.send(dumped)
+                    log.debug(f'Share objects from factory with with {recipient}')
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -264,5 +265,5 @@ class SharedFactory:
 
         for recipient in self.recipients:
             with suppress(OSError):
-                send(recipient, dumped)
+                recipient.send(dumped)
             log.debug(f'Share object {identifier} with {recipient}')

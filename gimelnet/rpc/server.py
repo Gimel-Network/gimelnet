@@ -28,10 +28,9 @@ storage.set('slaver2public', dict())
 
 @method(name='endpoints.get')
 def endpoints_get() -> Result:
-    if value := storage.get('endpoints'):
-        print(value)
-        return Success('\n'.join(value))
-    return Error(code=404, message='Not found key.')
+    value = storage.get('endpoints')
+    print(value)
+    return Success('\n'.join(value))
 
 
 @method(name='endpoints.add')

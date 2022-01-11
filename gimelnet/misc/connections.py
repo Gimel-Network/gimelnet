@@ -191,15 +191,15 @@ class ConnectionsDispatcher:
         self.connections_pool: Dict[Addr, Connection] = dict()
 
     def accept(self, timeout=None):
-        listen_socket, listen_address = self.listener.accept()
+        listen_connection, listen_address = self.listener.accept()
 
         if not in_network(listen_address):
             # bad
             return
 
-        self.connections_pool[Addr.from_pair(*listen_address)] = listen_socket
+        self.connections_pool[Addr.from_pair(*listen_address)] = listen_connection
 
-        return listen_socket, listen_address
+        return listen_connection, listen_address
 
     def connect(self, addr: Addr, timeout=None):
         if addr == self.public_addr:
@@ -212,15 +212,9 @@ class ConnectionsDispatcher:
             resp_socket.connect(addr)
             self.connections_pool[addr] = resp_socket
             log.info(f'Connection with {addr} was completed.')
-            return True
+            return resp_socket
         except ConnectionRefusedError:
-            log.warning(f'Connection with {addr} was refused.')
             return False
 
     def update_pool(self):
         self.endpoints = pool_rpc(self.rpc)
-
-
-
-
-

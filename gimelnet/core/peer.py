@@ -5,17 +5,15 @@ from typing import Generator
 
 from gimelnet.core.scheduler import Scheduler
 from gimelnet.misc.connections import ConnectionsDispatcher
-from gimelnet.misc.shared import SharedFactory
+from gimelnet.misc.shared import SharedFactory, SharedList
 from gimelnet.misc.utils import Addr
+
 log = logging.getLogger(__name__)
 
 
 class Peer:
 
-    def __init__(self, gimel_addr, rpc: str):
-        # unique node address in p2p network
-
-        self.gimel_addr = gimel_addr
+    def __init__(self, rpc: str):
 
         self.scheduler = Scheduler()
         self.scheduler.add_exceptor(StopIteration, lambda e: print('Stop Iteration'))
@@ -23,6 +21,8 @@ class Peer:
                                     lambda e: print('Connection reset error'))
 
         self.shared_factory = SharedFactory()
+        self.shared_factory.push('test', SharedList(['1', '2']))
+        self.scheduler.spawn_periodic(self.shared_factory.share, 5)
 
         self.connections_dispatcher = ConnectionsDispatcher(rpc)
         self.scheduler.spawn(self.accept_connections())
@@ -32,9 +32,10 @@ class Peer:
     def connect_to_endpoints(self):
         self.connections_dispatcher.update_pool()
         for endpoint in self.connections_dispatcher.endpoints:
-            if self.connections_dispatcher.connect(endpoint):
+            if connection := self.connections_dispatcher.connect(endpoint):
                 log.info(f'Try connect to {endpoint}')
                 job = self.request_job(endpoint)
+                self.shared_factory.add_recipient(connection)
                 self.scheduler.spawn(job)
 
     def accept_connections(self) -> Generator:
@@ -48,11 +49,13 @@ class Peer:
 
         while True:
             yield Scheduler.READ, self.connections_dispatcher.listener
-            _, address = self.connections_dispatcher.accept()
+            connection, address = self.connections_dispatcher.accept()
 
             log.info(f'Connection from {address}')
             # self.peer_proxy.add_socket(address[0], address[1], client_socket
             self.connect_to_endpoints()
+
+            self.shared_factory.add_recipient(connection)
             job = self.response_job(address)
             self.scheduler.spawn(job)
 
@@ -71,10 +74,9 @@ class Peer:
             # return the control flow to the main loop
             yield Scheduler.READ, connection
 
-            # followed by a blocking call-reading of data by timeout
             response = connection.read()
 
-            log.info(f'Receive message from {connection}: ')
+            log.info(f'Receive messages from {connection}: ')
             log.info(response)
 
             # socket connection broken sign
@@ -89,12 +91,8 @@ class Peer:
         while True:
             yield Scheduler.WRITE, connection
 
-            # self.connections_dispatcher.request(target_addr, 'ping')
-
             connection.send('ping')
             time.sleep(2)
-
-            # yield Scheduler.READ, target_socket
 
     def run(self):
         self.scheduler.run()

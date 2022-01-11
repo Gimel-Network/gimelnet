@@ -1,3 +1,4 @@
+from gimelnet.core.peerjrpc import SanicPeer
 from peer import Peer
 import click
 
@@ -23,7 +24,7 @@ def cli():
 @click.option('--rpc', required=True, help='RPC address')
 def run(rpc):
     uuid = gen_hash_from_words(['test', 'gimel', 'net'])
-    peer = Peer(uuid, rpc)
+    peer = SanicPeer(rpc, uuid)
     peer.run()
 
 
